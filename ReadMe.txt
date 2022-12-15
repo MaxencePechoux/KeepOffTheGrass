@@ -110,4 +110,5 @@ Refactoring/Improvements TODO:
 
  DONE- Store commands for each turn into a StringBuilder (probably) and just append with ; at the end
  DONE- Create a GameInstance class instantiated in Main, to get out of static context
- - Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
+ DONE- Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
+ - Keep track of the middle of X axis and of Defense line position/desired position?

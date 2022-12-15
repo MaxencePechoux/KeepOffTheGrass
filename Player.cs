@@ -72,6 +72,7 @@ public sealed class GameInstance
     public CampPosition Direction { get; private set; }
     public List<Tile> MyUnitsTiles { get; private set; }
     public TeamManager TeamManager { get; private set; }
+    public int DefenseLine { get; private set; }
 
 
     public void Start()
@@ -81,6 +82,7 @@ public sealed class GameInstance
         MapWidth = int.Parse(inputs[0]);
         MapHeight = int.Parse(inputs[1]);
         Direction = CampPosition.INIT;
+        DefenseLine = MapWidth / 2;
 
         // game loop
         while (true)
@@ -236,7 +238,54 @@ public class AIDefense : AI
 
     public override void CalculateTarget()
     {
-        Target = GameInstance.Map[GameInstance.MapWidth / 2, Location.Y];
+        int x = GameInstance.DefenseLine;
+        int y = Location.Y;
+        var targetFound = GameInstance.Map[x, y];
+        Target = targetFound != null ? targetFound : FindClosestNonGrassTile(x, y);
+
+    }
+
+    Tile FindClosestNonGrassTile(int x, int y)
+    {
+        Tile tile = null;
+        var direction = y > GameInstance.MapHeight / 2 ? 1 : -1;
+        var goal = y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight - 1 : 0;
+        var n = y;
+        var i = x;
+
+        while (i != Location.X)
+        {
+            while (n != goal)
+            {
+                n += direction;
+                tile = GameInstance.Map[i, n];
+
+                if (tile != null)
+                {
+                    return tile;
+                }
+            }
+
+            direction *= -1;
+            goal = goal == 0 ? GameInstance.MapHeight - 1 : 0;
+            n = y;
+
+            while (n != goal)
+            {
+                n += direction;
+                tile = GameInstance.Map[i, n];
+
+                if (tile != null)
+                {
+                    return tile;
+                }
+            }
+
+            //If we cannot find a suitable tile in the middle, we try one column closer to the unit
+            i -= (int) GameInstance.Direction;
+        }
+
+        return Location;
     }
 }
 
