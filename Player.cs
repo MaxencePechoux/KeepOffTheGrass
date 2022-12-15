@@ -72,6 +72,7 @@ public sealed class GameInstance
     public int MyMatter { get; private set; }
     public CampPosition Direction { get; private set; }
     public int DefenseLine { get; private set; }
+    public UnitFactory UnitFactory { get; private set; }
     public List<Tile> myUnitsTiles;
     public TeamManager teamManager;
     public RecyclerFactory recyclerFactory;
@@ -96,6 +97,7 @@ public sealed class GameInstance
             myUnitsTiles = new List<Tile>();
             teamManager = new TeamManager();
             recyclerFactory = new RecyclerFactory();
+            UnitFactory = new UnitFactory();
 
             for (int i = 0; i < MapHeight; i++)
             {
@@ -144,7 +146,9 @@ public sealed class GameInstance
             recyclerFactory.BuildRecyclersIfNeeded();
 
             teamManager.AssignMembersToTeams(myUnitsTiles);
-            teamManager.MoveTeams();
+            teamManager.ManageTeamsActions();
+
+            UnitFactory.SpawnUnits();
 
             logger.PublishOutput();
         }
@@ -181,6 +185,7 @@ public static class Helper
 public interface IAI
 {
     string GetAction();
+    bool IsInPosition();
     void CalculateTarget();
 }
 
@@ -189,6 +194,11 @@ public abstract class AI : IAI
     public string GetAction()
     {
         return Action.Move(1, Location.X, Location.Y, Target.X, Target.Y);
+    }
+
+    public virtual bool IsInPosition()
+    {
+        return false;
     }
 
     public abstract void CalculateTarget();
@@ -216,6 +226,11 @@ public class AIDefense : AI
     {
         Location = tile;
         CalculateTarget();
+    }
+    
+    public override bool IsInPosition()
+    {
+        return Location.X == GameInstance.DefenseLine;
     }
 
     public override void CalculateTarget()
@@ -324,9 +339,64 @@ public class Unit
         return ai.GetAction();
     }
 
+    public bool IsInPosition()
+    {
+        return ai.IsInPosition();
+    }
+
     public override string ToString()
     {
         return "I am a member of " + Team + " located at [" + Tile.X + "," + Tile.Y + "]!";
+    }
+}
+
+/**
+ * Keeps track of the spawn orders from the teams and prioritize them per team in case there isn't enough matter
+ */
+public class UnitFactory
+{
+    List<Tile> AttackTeamSpawnRequests;
+    List<Tile> DefenseTeamSpawnRequests;
+    List<Tile> BaseTeamSpawnRequests;
+    Logger logger = Logger.Instance;
+
+    public UnitFactory()
+    {
+        AttackTeamSpawnRequests = new List<Tile>();
+        DefenseTeamSpawnRequests = new List<Tile>();
+        BaseTeamSpawnRequests = new List<Tile>();
+    }
+
+    public void RequestSpawn(UnitTeam team, Tile tile)
+    {
+        switch(team)
+        {
+            case UnitTeam.ATTACK:
+                AttackTeamSpawnRequests.Add(tile);
+                break;
+            case UnitTeam.DEFENSE:
+                DefenseTeamSpawnRequests.Add(tile);
+                break;
+            case UnitTeam.BASE:
+                BaseTeamSpawnRequests.Add(tile);
+                break;
+
+        }
+    }
+
+    public void SpawnUnits()
+    {
+        SpawnTeamRequests(DefenseTeamSpawnRequests);
+        SpawnTeamRequests(AttackTeamSpawnRequests);
+        SpawnTeamRequests(BaseTeamSpawnRequests);
+    }
+
+    void SpawnTeamRequests(List<Tile> teamRequests)
+    {
+        foreach (Tile tile in teamRequests)
+        {
+            logger.LogAction(Action.Spawn(1, tile.X, tile.Y));
+        }
     }
 }
 
@@ -357,11 +427,24 @@ public class TeamManager
         }
     }
 
-    public void MoveTeams()
+    public void ManageTeamsActions()
+    {
+        SendTeamsSpawnRequestsToFactory();
+        MoveTeams();
+    }
+
+    void SendTeamsSpawnRequestsToFactory()
     {
         AttackTeam.MoveMembers();
         DefenseTeam.MoveMembers();
         BaseTeam.MoveMembers();
+    }
+
+    void MoveTeams()
+    {
+        AttackTeam.SendSpawnRequestsToFactory();
+        DefenseTeam.SendSpawnRequestsToFactory();
+        BaseTeam.SendSpawnRequestsToFactory();
     }
 }
 
@@ -369,6 +452,7 @@ public abstract class Team
 {
     public List<Unit> Members { get; protected set; }
     protected UnitTeam TeamType;
+    protected GameInstance gameInstance = GameInstance.Instance;
     Logger logger = Logger.Instance;
 
     public Unit AddNewMember(Tile tile)
@@ -385,6 +469,8 @@ public abstract class Team
             logger.LogAction(unit.GetAction());
         }
     }
+
+    public abstract void SendSpawnRequestsToFactory();
 }
 
 public class AttackTeam : Team
@@ -393,6 +479,11 @@ public class AttackTeam : Team
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.ATTACK;
+    }
+
+    public override void SendSpawnRequestsToFactory()
+    {
+
     }
 }
 
@@ -403,6 +494,17 @@ public class DefenseTeam : Team
         Members = new List<Unit>();
         TeamType = UnitTeam.DEFENSE;
     }
+
+    public override void SendSpawnRequestsToFactory()
+    {
+        foreach (var unit in Members)
+        {
+            if (unit.IsInPosition())
+            {
+                gameInstance.UnitFactory.RequestSpawn(TeamType, unit.Tile);
+            }
+        }
+    }
 }
 
 public class BaseTeam : Team
@@ -411,6 +513,11 @@ public class BaseTeam : Team
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.BASE;
+    }
+
+    public override void SendSpawnRequestsToFactory()
+    {
+        
     }
 }
 
