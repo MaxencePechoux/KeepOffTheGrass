@@ -112,3 +112,12 @@ Refactoring/Improvements TODO:
  DONE- Create a GameInstance class instantiated in Main, to get out of static context
  DONE- Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
  DONE- Keep track of the middle of X axis and of Defense line position/desired position?
+
+Next Steps:
+
+    - Make defense team spread across column
+    - Make attack team move towards enemy positions
+    - Make attack team spawn at first from defense team positions
+    - Make base team cover the base
+    - Determine each turn which unit goes to which team
+    - Determine position of recyclers more efficiently: closest from baseline as possible
