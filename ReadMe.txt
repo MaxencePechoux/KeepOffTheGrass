@@ -86,24 +86,24 @@ Architecture:
 
  DONE- class GameInstance that handles game loop, read input and keep track of global variables
  DONE- static class Constants
- - class Unit, contains the GetAction method, possess an AI of type IAI, instantiated in constructor when unit is being assigned to a team
- - abstract class Team
- - class AttackTeam : Team contains list of Unit
- - class DefenseTeam : Team contains list of Unit
- - class BaseTeam : Team contains list of Unit
+ DONE- class Unit, contains the GetAction method, possess an AI of type IAI, instantiated in constructor when unit is being assigned to a team
+ DONE- abstract class Team
+ DONE- class AttackTeam : Team contains list of Unit
+ DONE- class DefenseTeam : Team contains list of Unit
+ DONE- class BaseTeam : Team contains list of Unit
  DONE- class Tile with all details provided by input
  DONE- global Map variable: 2 dimensional array of Tiles, with null for grass Tiles
  - global list of Neutral Tiles
- - global list of my Tiles
+ DONE- global list of my Tiles
  - global list of enemy Tiles
- - const (for now) IdealFactories
- - const ScrapsToBuild = 10
- - const DesiredScrapsToBuild
- - const DesiredScrapsToSpawn
- - interface IAI, contains GetTarget
- - class AIAttack : IAI
- - class AIDefense : IAI
- - class AIBase : IAI
+ DONE- const (for now) IdealFactories
+ DONE- const ScrapsToBuild = 10
+ DONE- const DesiredScrapsToBuild
+ DONE- const DesiredScrapsToSpawn
+ DONE- interface IAI, contains GetTarget
+ DONE- class AIAttack : IAI
+ DONE- class AIDefense : IAI
+ DONE- class AIBase : IAI
  DONE- singleton class Logger, that will handle logging and output
 
 Refactoring/Improvements TODO:
@@ -111,4 +111,4 @@ Refactoring/Improvements TODO:
  DONE- Store commands for each turn into a StringBuilder (probably) and just append with ; at the end
  DONE- Create a GameInstance class instantiated in Main, to get out of static context
  DONE- Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
- - Keep track of the middle of X axis and of Defense line position/desired position?
+ DONE- Keep track of the middle of X axis and of Defense line position/desired position?

@@ -16,10 +16,10 @@ public class Player
 
 public static class Constants
 {
-    public const int SCRAPS_TO_BUILD = 10;
-    public const int IDEAL_FACTORIES = 5;
-    public const int MIN_SCRAPS_TO_BUILD = 10;
-    public const int MIN_SCRAPS_TO_SPAWN = 10;
+    public const int IDEAL_RECYCLERS = 5;
+    public const int MIN_MATTER_TO_BUILD = 30;
+    public const int MIN_MATTER_TO_SPAWN = 10;
+    public const int MIN_SCRAPPABLE_TO_BUILD = 20;
     public const int NEUTRAL = -1;
     public const int ME = 1;
     public const int ENEMY = 0;
@@ -69,10 +69,12 @@ public sealed class GameInstance
 
     public int MapWidth { get; private set; }
     public int MapHeight { get; private set; }
+    public int MyMatter { get; private set; }
     public CampPosition Direction { get; private set; }
-    public List<Tile> MyUnitsTiles { get; private set; }
-    public TeamManager TeamManager { get; private set; }
     public int DefenseLine { get; private set; }
+    public List<Tile> myUnitsTiles;
+    public TeamManager teamManager;
+    public RecyclerFactory recyclerFactory;
 
 
     public void Start()
@@ -88,11 +90,12 @@ public sealed class GameInstance
         while (true)
         {
             inputs = Console.ReadLine().Split(' ');
-            int myMatter = int.Parse(inputs[0]);
+            MyMatter = int.Parse(inputs[0]);
             int oppMatter = int.Parse(inputs[1]);
             Map = new Tile[MapWidth, MapHeight];
-            MyUnitsTiles = new List<Tile>();
-            TeamManager = new TeamManager();
+            myUnitsTiles = new List<Tile>();
+            teamManager = new TeamManager();
+            recyclerFactory = new RecyclerFactory();
 
             for (int i = 0; i < MapHeight; i++)
             {
@@ -112,9 +115,22 @@ public sealed class GameInstance
                             int.Parse(inputs[6]) == 1);
                         Map[j, i] = tile;
 
-                        if (tile.Owner == Constants.ME && tile.Units > 0)
+                        if (tile.Owner == Constants.ME)
                         {
-                            MyUnitsTiles.Add(tile);
+                            if (tile.Units > 0)
+                            {
+                                myUnitsTiles.Add(tile);
+                            }
+
+                            if (tile.Recycler)
+                            {
+                                recyclerFactory.AddRecycler(tile);
+                            }
+
+                            if (tile.CanBuild)
+                            {
+                                recyclerFactory.AddBuildableTile(tile);
+                            }
                         }
                     }
                 }
@@ -122,50 +138,16 @@ public sealed class GameInstance
 
             if (Direction == CampPosition.INIT)
             {
-                Direction = MyUnitsTiles[0].X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
+                Direction = myUnitsTiles[0].X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
             }
 
-            TeamManager.AssignMembersToTeams(MyUnitsTiles);
+            recyclerFactory.BuildRecyclersIfNeeded();
 
-            TeamManager.MoveTeams();
+            teamManager.AssignMembersToTeams(myUnitsTiles);
+            teamManager.MoveTeams();
 
             logger.PublishOutput();
         }
-    }
-}
-
-public class TeamManager
-{
-    public AttackTeam AttackTeam { get; private set; }
-    public DefenseTeam DefenseTeam { get; private set; }
-    public BaseTeam BaseTeam { get; private set; }
-    public List<Unit> FullTeam { get; }
-
-    public TeamManager()
-    {
-        AttackTeam = new AttackTeam();
-        DefenseTeam = new DefenseTeam();
-        BaseTeam = new BaseTeam();
-        FullTeam = new List<Unit>();
-    }
-
-    public void AssignMembersToTeams(List<Tile> unitTiles)
-    {
-        //TODO here is complex logic
-        foreach (var tile in unitTiles)
-        {
-            for (var i = 0; i < tile.Units; i++)
-            {
-                FullTeam.Add(DefenseTeam.AddNewMember(tile));
-            }
-        }
-    }
-
-    public void MoveTeams()
-    {
-        AttackTeam.MoveMembers();
-        DefenseTeam.MoveMembers();
-        BaseTeam.MoveMembers();
     }
 }
 
@@ -348,6 +330,41 @@ public class Unit
     }
 }
 
+public class TeamManager
+{
+    public AttackTeam AttackTeam { get; private set; }
+    public DefenseTeam DefenseTeam { get; private set; }
+    public BaseTeam BaseTeam { get; private set; }
+    public List<Unit> FullTeam { get; }
+
+    public TeamManager()
+    {
+        AttackTeam = new AttackTeam();
+        DefenseTeam = new DefenseTeam();
+        BaseTeam = new BaseTeam();
+        FullTeam = new List<Unit>();
+    }
+
+    public void AssignMembersToTeams(List<Tile> unitTiles)
+    {
+        //TODO here is complex logic
+        foreach (var tile in unitTiles)
+        {
+            for (var i = 0; i < tile.Units; i++)
+            {
+                FullTeam.Add(DefenseTeam.AddNewMember(tile));
+            }
+        }
+    }
+
+    public void MoveTeams()
+    {
+        AttackTeam.MoveMembers();
+        DefenseTeam.MoveMembers();
+        BaseTeam.MoveMembers();
+    }
+}
+
 public abstract class Team
 {
     public List<Unit> Members { get; protected set; }
@@ -394,6 +411,84 @@ public class BaseTeam : Team
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.BASE;
+    }
+}
+
+public class RecyclerFactory
+{
+    List<Tile> recyclers;
+    List<Tile> buildableTiles;
+    Logger logger = Logger.Instance;
+    GameInstance gameInstance = GameInstance.Instance;
+
+    public RecyclerFactory()
+    {
+        recyclers = new List<Tile>();
+        buildableTiles = new List<Tile>();
+    }
+
+    public void AddRecycler(Tile recycler)
+    {
+        recyclers.Add(recycler);
+    }
+
+
+
+    public void AddBuildableTile(Tile buildableTile)
+    {
+        buildableTiles.Add(buildableTile);
+    }
+
+    /**
+     * We build a recycler if we have enough matter, we did not reach our quota of recyclers, and we can find a suitable place
+     */
+    public void BuildRecyclersIfNeeded()
+    {
+        if (recyclers.Count < Constants.IDEAL_RECYCLERS 
+            && gameInstance.MyMatter > Constants.MIN_MATTER_TO_BUILD)
+        {
+            var suitableTile = FindSuitableTile();
+
+            if (suitableTile != null)
+            {
+                logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
+            }
+        }
+    }
+
+    /**
+     * A tile is suitable to build if it is not too close from another recycler and it has enough srappable matter
+     */
+    Tile FindSuitableTile()
+    {
+        foreach (var tile in buildableTiles)
+        {
+            if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
+                && !IsCloseToRecycler(tile))
+            {
+                return tile;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * If we are within range of another of our recyclers, then it is too close
+     */
+    bool IsCloseToRecycler(Tile tile)
+    {
+        foreach (var recycler in recyclers)
+        {
+            if ((tile.X == recycler.X && Math.Abs(tile.Y - recycler.Y) <= 2)
+                || (tile.Y == recycler.Y && Math.Abs(tile.X - recycler.X) <= 2)
+                || (Math.Abs(tile.X - recycler.X) <= 1 && Math.Abs(tile.Y - recycler.Y) <= 1))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -498,6 +593,8 @@ public class Tile
     public bool CanBuild { get; }
     public bool CanSpawn { get; }
     public bool InRangeOfRecycler { get; }
+    GameInstance gameInstance = GameInstance.Instance;
+    Tile[,] map = GameInstance.Instance.Map;
 
     public int TotalScrappableAmount
     {
@@ -505,9 +602,6 @@ public class Tile
         {
             if (fTotalScrappableAmount == 0)
             {
-                var gameInstance = GameInstance.Instance;
-                var map = gameInstance.Map;
-
                 if (X < gameInstance.MapWidth - 1)
                 {
                     fTotalScrappableAmount += map[X + 1, Y]?.ScrapAmount ?? 0;
