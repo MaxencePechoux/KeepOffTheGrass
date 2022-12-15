@@ -112,6 +112,7 @@ Refactoring/Improvements TODO:
  DONE- Create a GameInstance class instantiated in Main, to get out of static context
  DONE- Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
  DONE- Keep track of the middle of X axis and of Defense line position/desired position?
+ - We might want to move CalculateTarget outside of the AI constructors...
 
 Next Steps:
 

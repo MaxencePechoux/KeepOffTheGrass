@@ -44,6 +44,12 @@ public enum UnitTeam
     BASE
 }
 
+public enum Orientation
+{
+    UP = -1,
+    DOWN = 1
+}
+
 public sealed class GameInstance
 {
     private static GameInstance instance;
@@ -196,11 +202,7 @@ public abstract class AI : IAI
         return Action.Move(1, Location.X, Location.Y, Target.X, Target.Y);
     }
 
-    public virtual bool IsInPosition()
-    {
-        return false;
-    }
-
+    public abstract bool IsInPosition();
     public abstract void CalculateTarget();
 
     protected Tile Location { get; set; }
@@ -218,6 +220,11 @@ public class AIAttack : AI
 
     public override void CalculateTarget()
     { }
+
+    public override bool IsInPosition()
+    {
+        return false;
+    }
 }
 
 public class AIDefense : AI
@@ -225,27 +232,36 @@ public class AIDefense : AI
     public AIDefense(Tile tile)
     {
         Location = tile;
+        orientation = tile.Y > GameInstance.MapHeight / 2 ? Orientation.DOWN : Orientation.UP;
         CalculateTarget();
     }
+    Orientation orientation;
     
     public override bool IsInPosition()
     {
         return Location.X == GameInstance.DefenseLine;
     }
 
+    /**
+     * If we reached the defense line, then we move along the vertical axis, with the upper units towards the top, and inversly for bottom units
+     * If we didnt reach the defense line, then we move towards it
+     */
     public override void CalculateTarget()
     {
         int x = GameInstance.DefenseLine;
-        int y = Location.Y;
-        var targetFound = GameInstance.Map[x, y];
-        Target = targetFound != null ? targetFound : FindClosestNonGrassTile(x, y);
-
+        int y = IsInPosition() ? Location.Y + (int)orientation : Location.Y;
+        int withinBoundariesY = Math.Min(Math.Max(y, 0), GameInstance.MapHeight - 1);
+        var targetFound = GameInstance.Map[x, withinBoundariesY];
+        Target = targetFound != null ? targetFound : FindClosestNonGrassTile(x, withinBoundariesY);
     }
 
+    /**
+     * If the target we found was grass (i.e. null), then we try to find the closest possible tile in the right direction
+     */
     Tile FindClosestNonGrassTile(int x, int y)
     {
         Tile tile = null;
-        var direction = y > GameInstance.MapHeight / 2 ? 1 : -1;
+        var direction = (int)orientation;
         var goal = y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight - 1 : 0;
         var n = y;
         var i = x;
@@ -304,6 +320,11 @@ public class AIBase : AI
         {
             Target = GameInstance.Map[GameInstance.MapWidth - 1, 0];
         }
+    }
+
+    public override bool IsInPosition()
+    {
+        return false;
     }
 }
 
