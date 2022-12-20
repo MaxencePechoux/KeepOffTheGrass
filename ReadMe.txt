@@ -123,3 +123,15 @@ Next Steps:
     DONE- Make base team cover the base
     - Determine each turn which unit goes to which team
     DONE- Determine position of recyclers more efficiently: closest from baseline as possible
+
+
+Notes/ideas:
+    Another possible strategy that seems to be used by top ranker is to shift from a team perspective to a phase perspective:
+    - instead of having 3 teams, we would have three phases:
+        -> Attack phase: units tush towards middle
+        -> Defense phase: units spread vertically from middle to build a column of recycler to break the map in 2
+        -> Covering base phase: once the map is broken, convert all neutral tiles in base
+    - This could actually be achieved with my current 3 teams strategy too, with some alterations
+    - The attack team could transform into one single scout unit
+        -> the scout would rush far into enemy camp, and as soon as the defense team as finished breaking the map, we would reinforce to the max that scout into a super fortified unit, with all scrap available
+        -> then while the base team is slowly covering all neutral tiles in camp, super fortified scout walks within enemy territory and drops a recycler every time possible to reduce enemy territory
