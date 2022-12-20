@@ -77,12 +77,12 @@ public sealed class GameInstance
     public int MapWidth { get; private set; }
     public int MapHeight { get; private set; }
     public int MyMatter { get; private set; }
-    public int DefenseLine { get; private set; }
+    public int DefenseLine { get; set; }
     public int BaseTeamObjectiveIndex { get; set; }
     public List<Tile> BaseTeamObjectives { get; private set; }
     public CampPosition Direction { get; private set; }
     public UnitManager UnitManager { get; private set; }
-    public TeamManager TeamManager { get; private set; }
+    public TeamsManager TeamsManager { get; private set; }
     RecyclerFactory recyclerFactory;
 
 
@@ -93,7 +93,9 @@ public sealed class GameInstance
         MapWidth = int.Parse(inputs[0]);
         MapHeight = int.Parse(inputs[1]);
         Direction = CampPosition.INIT;
-        DefenseLine = MapWidth / 2;
+        TeamsManager = new TeamsManager();
+        recyclerFactory = new RecyclerFactory();
+        UnitManager = new UnitManager();
 
         // game loop
         while (true)
@@ -102,9 +104,9 @@ public sealed class GameInstance
             MyMatter = int.Parse(inputs[0]);
             int oppMatter = int.Parse(inputs[1]);
             Map = new Tile[MapWidth, MapHeight];
-            TeamManager = new TeamManager();
-            recyclerFactory = new RecyclerFactory();
-            UnitManager = new UnitManager();
+            TeamsManager.ResetForNewTurn();
+            recyclerFactory.ResetForNewTurn();
+            UnitManager.ResetForNewTurn();
 
             for (int i = 0; i < MapHeight; i++)
             {
@@ -154,8 +156,8 @@ public sealed class GameInstance
 
             recyclerFactory.BuildRecyclersIfNeeded();
 
-            TeamManager.AssignMembersToTeams(UnitManager.Units);
-            TeamManager.ManageTeamsActions();
+            TeamsManager.AssignMembersToTeams(UnitManager.Units);
+            TeamsManager.ManageTeamsActions();
 
             UnitManager.SpawnUnits();
 
@@ -214,7 +216,7 @@ public static class Helper
     }
 
     /**
-     * A tile is valid if it is not grass nor a recycler
+     * A tile is valid if it is neither grass nor a recycler
      */
     public static Tile FindClosestValidTile(int x, int y, int furthestYToTest)
     {
@@ -309,7 +311,7 @@ public class AIDefense : AI
         
         if (IsInPosition())
         {
-            var defenseTeam = GameInstance.TeamManager.DefenseTeam;
+            var defenseTeam = GameInstance.TeamsManager.DefenseTeam;
 
             //for now, we only move the top units up, and the bottom units down
             if (Location.Y == defenseTeam.BottomUnitTile.Y)
@@ -411,13 +413,21 @@ public class Unit
  */
 public class UnitManager
 {
-    public List<Unit> Units { get; }
+    public List<Unit> Units { get; private set; }
     List<Tile> AttackTeamSpawnRequests;
     List<Tile> DefenseTeamSpawnRequests;
     List<Tile> BaseTeamSpawnRequests;
     Logger logger = Logger.Instance;
 
     public UnitManager()
+    {
+        AttackTeamSpawnRequests = new List<Tile>();
+        DefenseTeamSpawnRequests = new List<Tile>();
+        BaseTeamSpawnRequests = new List<Tile>();
+        Units = new List<Unit>();
+    }
+
+    public void ResetForNewTurn()
     {
         AttackTeamSpawnRequests = new List<Tile>();
         DefenseTeamSpawnRequests = new List<Tile>();
@@ -466,17 +476,24 @@ public class UnitManager
     }
 }
 
-public class TeamManager
+public class TeamsManager
 {
     public AttackTeam AttackTeam { get; private set; }
     public DefenseTeam DefenseTeam { get; private set; }
     public BaseTeam BaseTeam { get; private set; }
 
-    public TeamManager()
+    public TeamsManager()
     {
         AttackTeam = new AttackTeam();
         DefenseTeam = new DefenseTeam();
         BaseTeam = new BaseTeam();
+    }
+
+    public void ResetForNewTurn()
+    {
+        AttackTeam.ResetTeamForNewTurn();
+        DefenseTeam.ResetTeamForNewTurn();
+        BaseTeam.ResetTeamForNewTurn();
     }
 
     public void AssignMembersToTeams(List<Unit> units)
@@ -524,6 +541,11 @@ public abstract class Team
     protected GameInstance gameInstance = GameInstance.Instance;
     Logger logger = Logger.Instance;
 
+    public void ResetTeamForNewTurn()
+    {
+        Members.Clear();
+    }
+
     public virtual void AddNewMember(Unit unit)
     {
         Members.Add(unit);
@@ -559,11 +581,14 @@ public class DefenseTeam : Team
 {
     public Tile TopUnitTile {get; private set; }
     public Tile BottomUnitTile {get; private set; }
+    public int DefenseLine {get; private set; }
 
     public DefenseTeam()
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.DEFENSE;
+        DefenseLine = gameInstance.MapWidth / 2;
+        gameInstance.DefenseLine = DefenseLine;
     }
 
     public override void AddNewMember(Unit unit)
@@ -615,6 +640,12 @@ public class RecyclerFactory
     GameInstance gameInstance = GameInstance.Instance;
 
     public RecyclerFactory()
+    {
+        recyclers = new List<Tile>();
+        buildableTiles = new List<Tile>();
+    }
+
+    public void ResetForNewTurn()
     {
         recyclers = new List<Tile>();
         buildableTiles = new List<Tile>();

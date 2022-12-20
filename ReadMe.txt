@@ -112,13 +112,14 @@ Refactoring/Improvements TODO:
  DONE- Create a GameInstance class instantiated in Main, to get out of static context
  DONE- Determine and store if we start from left side or right side: if any tank.X < Gridwidth / 2 -> we are on the left, otherwise we are on the right
  DONE- Keep track of the middle of X axis and of Defense line position/desired position?
- - We might want to move CalculateTarget outside of the AI constructors...
+ DONE- We might want to move CalculateTarget outside of the AI constructors...
 
 Next Steps:
 
+    - Introduce persistence between turns: stop re instantiating everything each turn, and keep track of some data
     - Make defense team spread across column EVENLY
     - Make attack team move towards enemy positions
     - Make attack team spawn at first from defense team positions
-    - Make base team cover the base
+    DONE- Make base team cover the base
     - Determine each turn which unit goes to which team
     - Determine position of recyclers more efficiently: closest from baseline as possible
