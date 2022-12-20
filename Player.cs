@@ -79,7 +79,7 @@ public sealed class GameInstance
     public int MyMatter { get; private set; }
     public int BaseTeamObjectiveIndex { get; set; }
     public List<Tile> BaseTeamObjectives { get; private set; }
-    public CampPosition Direction { get; private set; }
+    public CampPosition CampPosition { get; private set; }
     public UnitManager UnitManager { get; private set; }
     public TeamsManager TeamsManager { get; private set; }
     RecyclerFactory recyclerFactory;
@@ -91,7 +91,7 @@ public sealed class GameInstance
         inputs = Console.ReadLine().Split(' ');
         MapWidth = int.Parse(inputs[0]);
         MapHeight = int.Parse(inputs[1]);
-        Direction = CampPosition.INIT;
+        CampPosition = CampPosition.INIT;
         TeamsManager = new TeamsManager();
         recyclerFactory = new RecyclerFactory();
         UnitManager = new UnitManager();
@@ -142,13 +142,17 @@ public sealed class GameInstance
                                 recyclerFactory.AddBuildableTile(tile);
                             }
                         }
+                        else if (tile.Owner == Constants.ENEMY)
+                        {
+                            TeamsManager.AttackTeam.AddEnemyTile(tile);
+                        }
                     }
                 }
             }
 
-            if (Direction == CampPosition.INIT)
+            if (CampPosition == CampPosition.INIT)
             {
-                Direction = UnitManager.Units[0].Tile.X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
+                CampPosition = UnitManager.Units[0].Tile.X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
                 BaseTeamObjectives = Helper.InitBaseTeamObjectives();
                 BaseTeamObjectiveIndex = 0;
             }
@@ -197,7 +201,7 @@ public static class Helper
 
         var gameInstance = GameInstance.Instance;
 
-        int x = gameInstance.Direction == CampPosition.LEFT ? 0 : gameInstance.MapWidth - 1;
+        int x = gameInstance.CampPosition == CampPosition.LEFT ? 0 : gameInstance.MapWidth - 1;
         for (var i = 0; i < gameInstance.MapWidth / 2; i++)
         {
             int y = i % 2 == 0 ? 0 : gameInstance.MapHeight - 1;
@@ -284,7 +288,16 @@ public class AIAttack : AI
     }
 
     public override void CalculateTarget()
-    { }
+    {
+        foreach (var tile in GameInstance.Instance.TeamsManager.AttackTeam.EnemyTiles.Keys)
+        { 
+            if (!tile.Recycler)
+            {
+                Target = tile;
+                return;
+            }
+        }
+    }
 
     public override bool IsInPosition()
     {
@@ -498,7 +511,7 @@ public class TeamsManager
     public void AssignMembersToTeams(List<Unit> units)
     {
         //TODO here is complex logic
-        var baseUnits = GameInstance.Instance.Direction == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
+        var baseUnits = GameInstance.Instance.CampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
 
         foreach (var baseUnit in baseUnits)
         { 
@@ -508,7 +521,7 @@ public class TeamsManager
         
         foreach (var unit in units)
         {
-            DefenseTeam.AddNewMember(unit);
+            AttackTeam.AddNewMember(unit);
         }
     }
 
@@ -540,7 +553,7 @@ public abstract class Team
     protected GameInstance gameInstance = GameInstance.Instance;
     Logger logger = Logger.Instance;
 
-    public void ResetTeamForNewTurn()
+    public virtual void ResetTeamForNewTurn()
     {
         Members.Clear();
     }
@@ -564,10 +577,32 @@ public abstract class Team
 
 public class AttackTeam : Team
 {
+    public SortedList<Tile, Tile> EnemyTiles { get; private set; }
+
     public AttackTeam()
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.ATTACK;
+        EnemyTiles = new SortedList<Tile, Tile>();
+    }
+
+    public override void ResetTeamForNewTurn()
+    {
+        base.ResetTeamForNewTurn();
+
+        if (gameInstance.CampPosition == CampPosition.LEFT)
+        {
+            EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
+        }
+        else
+        {
+            EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
+        }
+    }
+
+    public void AddEnemyTile(Tile enemyTile)
+    {
+        EnemyTiles.Add(enemyTile, null);
     }
 
     public override void SendSpawnRequestsToFactory()
@@ -646,16 +681,13 @@ public class RecyclerFactory
     public void ResetForNewTurn()
     {
         recyclers = new List<Tile>();
-        logger.LogDebugMessage("Clearing");
-        if (gameInstance.Direction == CampPosition.LEFT)
+        if (gameInstance.CampPosition == CampPosition.LEFT)
         {
-            buildableTiles = new SortedList<Tile, Tile>(new SortTileForLeftCamp());
-            logger.LogDebugMessage("Camp LEFT, count: " + buildableTiles.Count);
+            buildableTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
         }
         else
         {
-            buildableTiles = new SortedList<Tile, Tile>(new SortTileForRightCamp());
-            logger.LogDebugMessage("Camp RIGHT, count: " + buildableTiles.Count);
+            buildableTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
         }
     }
 
@@ -666,7 +698,6 @@ public class RecyclerFactory
 
     public void AddBuildableTile(Tile buildableTile)
     {
-        logger.LogDebugMessage("Adding " + buildableTile);
         buildableTiles.Add(buildableTile, null);
     }
 
@@ -881,7 +912,7 @@ public class Tile
     }
 }
 
-class SortTileForLeftCamp : IComparer<Tile>
+class SortTileFromLeftToRight : IComparer<Tile>
 {
     int IComparer<Tile>.Compare(Tile a, Tile b)
     {
@@ -914,7 +945,7 @@ class SortTileForLeftCamp : IComparer<Tile>
     }
 }
 
-class SortTileForRightCamp : IComparer<Tile>
+class SortTileFromRightToLeft : IComparer<Tile>
 {
     int IComparer<Tile>.Compare(Tile a, Tile b)
     {
