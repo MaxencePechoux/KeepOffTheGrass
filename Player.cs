@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.IO;
 using System.Text;
@@ -20,6 +20,7 @@ public static class Constants
     public const int MIN_MATTER_TO_BUILD = 30;
     public const int MIN_MATTER_TO_SPAWN = 10;
     public const int MIN_SCRAPPABLE_TO_BUILD = 20;
+    public const int BASE_TEAM_UNITS = 1;
     public const int NEUTRAL = -1;
     public const int ME = 1;
     public const int ENEMY = 0;
@@ -44,7 +45,7 @@ public enum UnitTeam
     BASE
 }
 
-public enum Orientation
+public enum Direction
 {
     UP = -1,
     DOWN = 1
@@ -76,12 +77,13 @@ public sealed class GameInstance
     public int MapWidth { get; private set; }
     public int MapHeight { get; private set; }
     public int MyMatter { get; private set; }
-    public CampPosition Direction { get; private set; }
     public int DefenseLine { get; private set; }
-    public UnitFactory UnitFactory { get; private set; }
-    public List<Tile> myUnitsTiles;
-    public TeamManager teamManager;
-    public RecyclerFactory recyclerFactory;
+    public int BaseTeamObjectiveIndex { get; set; }
+    public List<Tile> BaseTeamObjectives { get; private set; }
+    public CampPosition Direction { get; private set; }
+    public UnitManager UnitManager { get; private set; }
+    public TeamManager TeamManager { get; private set; }
+    RecyclerFactory recyclerFactory;
 
 
     public void Start()
@@ -100,10 +102,9 @@ public sealed class GameInstance
             MyMatter = int.Parse(inputs[0]);
             int oppMatter = int.Parse(inputs[1]);
             Map = new Tile[MapWidth, MapHeight];
-            myUnitsTiles = new List<Tile>();
-            teamManager = new TeamManager();
+            TeamManager = new TeamManager();
             recyclerFactory = new RecyclerFactory();
-            UnitFactory = new UnitFactory();
+            UnitManager = new UnitManager();
 
             for (int i = 0; i < MapHeight; i++)
             {
@@ -127,7 +128,7 @@ public sealed class GameInstance
                         {
                             if (tile.Units > 0)
                             {
-                                myUnitsTiles.Add(tile);
+                                UnitManager.CreateUnits(tile);
                             }
 
                             if (tile.Recycler)
@@ -146,15 +147,17 @@ public sealed class GameInstance
 
             if (Direction == CampPosition.INIT)
             {
-                Direction = myUnitsTiles[0].X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
+                Direction = UnitManager.Units[0].Tile.X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
+                BaseTeamObjectives = Helper.InitBaseTeamObjectives();
+                BaseTeamObjectiveIndex = 0;
             }
 
             recyclerFactory.BuildRecyclersIfNeeded();
 
-            teamManager.AssignMembersToTeams(myUnitsTiles);
-            teamManager.ManageTeamsActions();
+            TeamManager.AssignMembersToTeams(UnitManager.Units);
+            TeamManager.ManageTeamsActions();
 
-            UnitFactory.SpawnUnits();
+            UnitManager.SpawnUnits();
 
             logger.PublishOutput();
         }
@@ -179,12 +182,83 @@ public static class Helper
         }
     }
 
-    public static void LogTeamCompositions(Logger logger, TeamManager teamManager)
+    public static void LogTeamCompositions(Logger logger, UnitManager unitManager)
     {
-        foreach (var unit in teamManager.FullTeam)
+        foreach (var unit in unitManager.Units)
         {
             logger.LogDebugMessage(unit.ToString());
         }
+    }
+
+    public static List<Tile> InitBaseTeamObjectives()
+    {
+        var result = new List<Tile>();
+
+        var gameInstance = GameInstance.Instance;
+        var map = gameInstance.Map;
+
+        int x = gameInstance.Direction == CampPosition.LEFT ? 0 : gameInstance.MapWidth - 1;
+        for (var i = 0; i < gameInstance.MapWidth / 2; i++)
+        {
+            int y = i % 2 == 0 ? 0 : gameInstance.MapHeight - 1;
+            result.Add(FindClosestNonGrassNorRecyclerTile(map[gameInstance.MapWidth / 2, gameInstance.MapHeight / 2], Math.Abs(x - i), y));
+        }
+
+        return result;
+    }
+
+    public static Tile FindClosestNonGrassNorRecyclerTile(Tile origin, int x, int y)
+    {
+        Logger.Instance.LogDebugMessage("Closest tile from : " + x + " " + y);
+
+        var gameInstance = GameInstance.Instance;
+
+        var result = gameInstance.Map[x, y];
+        if (result != null && !result.Recycler)
+        {
+            return result;
+        }
+
+        //we might need to recalculate the direction here
+        var direction = 1;
+        var goal = y > gameInstance.MapHeight / 2 ? gameInstance.MapHeight - 1 : 0;
+        var n = y;
+        var i = x;
+
+        while (i != origin.X)
+        {
+            while (n != goal)
+            {
+                n += direction;
+                result = gameInstance.Map[i, n];
+
+                if (result != null && !result.Recycler)
+                {
+                    return result;
+                }
+            }
+
+            direction *= -1;
+            goal = goal == 0 ? gameInstance.MapHeight - 1 : 0;
+            n = y;
+
+            while (n != goal)
+            {
+                n += direction;
+                result = gameInstance.Map[i, n];
+
+                if (result != null && !result.Recycler)
+                {
+                    return result;
+                }
+            }
+
+            //If we cannot find a suitable tile in the middle, we try one column closer to the unit
+            i -= (int) gameInstance.Direction;
+        }
+
+        //If we can't find any, we ll just return the origin
+        return origin;
     }
 }
 
@@ -199,6 +273,7 @@ public abstract class AI : IAI
 {
     public string GetAction()
     {
+        CalculateTarget();
         return Action.Move(1, Location.X, Location.Y, Target.X, Target.Y);
     }
 
@@ -215,7 +290,6 @@ public class AIAttack : AI
     public AIAttack(Tile tile)
     {
         Location = tile;
-        CalculateTarget();
     }
 
     public override void CalculateTarget()
@@ -232,73 +306,40 @@ public class AIDefense : AI
     public AIDefense(Tile tile)
     {
         Location = tile;
-        orientation = tile.Y > GameInstance.MapHeight / 2 ? Orientation.DOWN : Orientation.UP;
-        CalculateTarget();
     }
-    Orientation orientation;
     
     public override bool IsInPosition()
     {
         return Location.X == GameInstance.DefenseLine;
     }
 
-    /**
-     * If we reached the defense line, then we move along the vertical axis, with the upper units towards the top, and inversly for bottom units
-     * If we didnt reach the defense line, then we move towards it
-     */
+    int CalculateY()
+    {
+        var result = Location.Y;
+        
+        if (IsInPosition())
+        {
+            var defenseTeam = GameInstance.TeamManager.DefenseTeam;
+
+            //for now, we only move the top units up, and the bottom units down
+            if (Location.Y == defenseTeam.BottomUnitTile.Y)
+            {
+                result++;
+            }
+            else if (Location.Y == defenseTeam.TopUnitTile.Y)
+            {
+                result--;
+            }
+        }
+
+        return Math.Min(Math.Max(result, 0), GameInstance.MapHeight - 1);
+    }
+
     public override void CalculateTarget()
     {
         int x = GameInstance.DefenseLine;
-        int y = IsInPosition() ? Location.Y + (int)orientation : Location.Y;
-        int withinBoundariesY = Math.Min(Math.Max(y, 0), GameInstance.MapHeight - 1);
-        var targetFound = GameInstance.Map[x, withinBoundariesY];
-        Target = targetFound != null ? targetFound : FindClosestNonGrassTile(x, withinBoundariesY);
-    }
-
-    /**
-     * If the target we found was grass (i.e. null), then we try to find the closest possible tile in the right direction
-     */
-    Tile FindClosestNonGrassTile(int x, int y)
-    {
-        Tile tile = null;
-        var direction = (int)orientation;
-        var goal = y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight - 1 : 0;
-        var n = y;
-        var i = x;
-
-        while (i != Location.X)
-        {
-            while (n != goal)
-            {
-                n += direction;
-                tile = GameInstance.Map[i, n];
-
-                if (tile != null)
-                {
-                    return tile;
-                }
-            }
-
-            direction *= -1;
-            goal = goal == 0 ? GameInstance.MapHeight - 1 : 0;
-            n = y;
-
-            while (n != goal)
-            {
-                n += direction;
-                tile = GameInstance.Map[i, n];
-
-                if (tile != null)
-                {
-                    return tile;
-                }
-            }
-
-            //If we cannot find a suitable tile in the middle, we try one column closer to the unit
-            i -= (int) GameInstance.Direction;
-        }
-
-        return Location;
+        int y = CalculateY();
+        Target = Helper.FindClosestNonGrassNorRecyclerTile(Location, x, y);
     }
 }
 
@@ -307,18 +348,18 @@ public class AIBase : AI
     public AIBase(Tile tile)
     {
         Location = tile;
-        CalculateTarget();
+        Target = GameInstance.BaseTeamObjectives[GameInstance.BaseTeamObjectiveIndex];
     }
 
     public override void CalculateTarget()
     {
-        if (GameInstance.Direction == CampPosition.LEFT)
+        if (Target.Equals(Location))
         {
-            Target = GameInstance.Map[0, 0];
-        }
-        else
-        {
-            Target = GameInstance.Map[GameInstance.MapWidth - 1, 0];
+            if (GameInstance.BaseTeamObjectiveIndex < GameInstance.BaseTeamObjectives.Count - 1)
+            {
+                GameInstance.BaseTeamObjectiveIndex++;
+                Target = GameInstance.BaseTeamObjectives[GameInstance.BaseTeamObjectiveIndex];
+            }
         }
     }
 
@@ -331,26 +372,29 @@ public class AIBase : AI
 public class Unit
 {
     public Tile Tile { get; }
-    public UnitTeam Team { get; }
+    public UnitTeam Team { get; private set; }
     IAI ai;
 
-    public Unit(UnitTeam team, Tile tile)
+    public Unit(Tile tile)
     {
         Tile = tile;
+    }
 
+    public void AssignTeam(UnitTeam team)
+    {
         switch (team)
         {
             case UnitTeam.ATTACK:
                 Team = UnitTeam.ATTACK;
-                ai = new AIAttack(tile);
+                ai = new AIAttack(Tile);
                 break;
             case UnitTeam.DEFENSE:
                 Team = UnitTeam.DEFENSE;
-                ai = new AIDefense(tile);
+                ai = new AIDefense(Tile);
                 break;
             case UnitTeam.BASE:
                 Team = UnitTeam.BASE;
-                ai = new AIBase(tile);
+                ai = new AIBase(Tile);
                 break;
         }
     }
@@ -374,18 +418,28 @@ public class Unit
 /**
  * Keeps track of the spawn orders from the teams and prioritize them per team in case there isn't enough matter
  */
-public class UnitFactory
+public class UnitManager
 {
+    public List<Unit> Units { get; }
     List<Tile> AttackTeamSpawnRequests;
     List<Tile> DefenseTeamSpawnRequests;
     List<Tile> BaseTeamSpawnRequests;
     Logger logger = Logger.Instance;
 
-    public UnitFactory()
+    public UnitManager()
     {
         AttackTeamSpawnRequests = new List<Tile>();
         DefenseTeamSpawnRequests = new List<Tile>();
         BaseTeamSpawnRequests = new List<Tile>();
+        Units = new List<Unit>();
+    }
+
+    public void CreateUnits(Tile tile)
+    {
+        for (var i = 0; i < tile.Units; i++)
+        {
+            Units.Add(new Unit(tile));
+        }
     }
 
     public void RequestSpawn(UnitTeam team, Tile tile)
@@ -426,25 +480,28 @@ public class TeamManager
     public AttackTeam AttackTeam { get; private set; }
     public DefenseTeam DefenseTeam { get; private set; }
     public BaseTeam BaseTeam { get; private set; }
-    public List<Unit> FullTeam { get; }
 
     public TeamManager()
     {
         AttackTeam = new AttackTeam();
         DefenseTeam = new DefenseTeam();
         BaseTeam = new BaseTeam();
-        FullTeam = new List<Unit>();
     }
 
-    public void AssignMembersToTeams(List<Tile> unitTiles)
+    public void AssignMembersToTeams(List<Unit> units)
     {
         //TODO here is complex logic
-        foreach (var tile in unitTiles)
+        var baseUnits = units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
+
+        foreach (var baseUnit in baseUnits)
+        { 
+            BaseTeam.AddNewMember(baseUnit);
+            units.Remove(baseUnit);
+        }
+        
+        foreach (var unit in units)
         {
-            for (var i = 0; i < tile.Units; i++)
-            {
-                FullTeam.Add(DefenseTeam.AddNewMember(tile));
-            }
+            DefenseTeam.AddNewMember(unit);
         }
     }
 
@@ -476,11 +533,10 @@ public abstract class Team
     protected GameInstance gameInstance = GameInstance.Instance;
     Logger logger = Logger.Instance;
 
-    public Unit AddNewMember(Tile tile)
+    public virtual void AddNewMember(Unit unit)
     {
-        var result = new Unit(TeamType, tile);
-        Members.Add(result);
-        return result;
+        Members.Add(unit);
+        unit.AssignTeam(TeamType);
     }
 
     public void MoveMembers()
@@ -510,10 +566,28 @@ public class AttackTeam : Team
 
 public class DefenseTeam : Team
 {
+    public Tile TopUnitTile {get; private set; }
+    public Tile BottomUnitTile {get; private set; }
+
     public DefenseTeam()
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.DEFENSE;
+    }
+
+    public override void AddNewMember(Unit unit)
+    {
+        base.AddNewMember(unit);
+
+        var tile = unit.Tile;
+        if (TopUnitTile == null || TopUnitTile.Y > tile.Y)
+        {
+            TopUnitTile = tile;
+        }
+        if (BottomUnitTile == null || BottomUnitTile.Y < tile.Y)
+        {
+            BottomUnitTile = tile;
+        }
     }
 
     public override void SendSpawnRequestsToFactory()
@@ -522,7 +596,7 @@ public class DefenseTeam : Team
         {
             if (unit.IsInPosition())
             {
-                gameInstance.UnitFactory.RequestSpawn(TeamType, unit.Tile);
+                gameInstance.UnitManager.RequestSpawn(TeamType, unit.Tile);
             }
         }
     }
@@ -753,6 +827,24 @@ public class Tile
         }
     }
     int fTotalScrappableAmount = 0;
+
+    public override bool Equals(Object obj)
+    {
+        Tile tile = obj as Tile;
+        if (tile == null)
+        {
+            return false;
+        }
+        else
+        {
+            return X == tile.X && Y == tile.Y;
+        }
+    }
+
+   public override int GetHashCode()
+   {
+      return this.X.GetHashCode() + this.Y.GetHashCode();
+   }
 
     public override string ToString()
     {

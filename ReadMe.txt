@@ -116,7 +116,7 @@ Refactoring/Improvements TODO:
 
 Next Steps:
 
-    - Make defense team spread across column
+    - Make defense team spread across column EVENLY
     - Make attack team move towards enemy positions
     - Make attack team spawn at first from defense team positions
     - Make base team cover the base
