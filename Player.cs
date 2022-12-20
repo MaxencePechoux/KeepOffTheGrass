@@ -17,8 +17,8 @@ public class Player
 public static class Constants
 {
     public const int IDEAL_RECYCLERS = 5;
-    public const int MIN_MATTER_TO_BUILD = 30;
-    public const int MIN_MATTER_TO_SPAWN = 10;
+    public const int MIN_MATTER_TO_BUILD = 20;
+    public const int MIN_MATTER_TO_SPAWN = 20;
     public const int MIN_SCRAPPABLE_TO_BUILD = 20;
     public const int BASE_TEAM_UNITS = 1;
     public const int NEUTRAL = -1;
@@ -77,7 +77,6 @@ public sealed class GameInstance
     public int MapWidth { get; private set; }
     public int MapHeight { get; private set; }
     public int MyMatter { get; private set; }
-    public int DefenseLine { get; set; }
     public int BaseTeamObjectiveIndex { get; set; }
     public List<Tile> BaseTeamObjectives { get; private set; }
     public CampPosition Direction { get; private set; }
@@ -302,7 +301,7 @@ public class AIDefense : AI
     
     public override bool IsInPosition()
     {
-        return Location.X == GameInstance.DefenseLine;
+        return Location.X == GameInstance.TeamsManager.DefenseTeam.DefenseLine;
     }
 
     int CalculateY()
@@ -329,7 +328,7 @@ public class AIDefense : AI
 
     public override void CalculateTarget()
     {
-        int x = GameInstance.DefenseLine;
+        int x = GameInstance.TeamsManager.DefenseTeam.DefenseLine;
         int y = CalculateY();
         int furthestY = Location.Y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight : 0;
         Target = Helper.FindClosestValidTile(x, y, furthestY) ?? Location;
@@ -588,7 +587,6 @@ public class DefenseTeam : Team
         Members = new List<Unit>();
         TeamType = UnitTeam.DEFENSE;
         DefenseLine = gameInstance.MapWidth / 2;
-        gameInstance.DefenseLine = DefenseLine;
     }
 
     public override void AddNewMember(Unit unit)
@@ -635,20 +633,30 @@ public class BaseTeam : Team
 public class RecyclerFactory
 {
     List<Tile> recyclers;
-    List<Tile> buildableTiles;
+    SortedList<Tile, Tile> buildableTiles;
     Logger logger = Logger.Instance;
     GameInstance gameInstance = GameInstance.Instance;
 
     public RecyclerFactory()
     {
         recyclers = new List<Tile>();
-        buildableTiles = new List<Tile>();
+        buildableTiles = new SortedList<Tile, Tile>();
     }
 
     public void ResetForNewTurn()
     {
         recyclers = new List<Tile>();
-        buildableTiles = new List<Tile>();
+        logger.LogDebugMessage("Clearing");
+        if (gameInstance.Direction == CampPosition.LEFT)
+        {
+            buildableTiles = new SortedList<Tile, Tile>(new SortTileForLeftCamp());
+            logger.LogDebugMessage("Camp LEFT, count: " + buildableTiles.Count);
+        }
+        else
+        {
+            buildableTiles = new SortedList<Tile, Tile>(new SortTileForRightCamp());
+            logger.LogDebugMessage("Camp RIGHT, count: " + buildableTiles.Count);
+        }
     }
 
     public void AddRecycler(Tile recycler)
@@ -656,11 +664,10 @@ public class RecyclerFactory
         recyclers.Add(recycler);
     }
 
-
-
     public void AddBuildableTile(Tile buildableTile)
     {
-        buildableTiles.Add(buildableTile);
+        logger.LogDebugMessage("Adding " + buildableTile);
+        buildableTiles.Add(buildableTile, null);
     }
 
     /**
@@ -685,7 +692,7 @@ public class RecyclerFactory
      */
     Tile FindSuitableTile()
     {
-        foreach (var tile in buildableTiles)
+        foreach (var tile in buildableTiles.Keys)
         {
             if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
                 && !IsCloseToRecycler(tile))
@@ -871,5 +878,70 @@ public class Tile
     public override string ToString()
     {
         return "x: " + X + ", y:" + Y;
+    }
+}
+
+class SortTileForLeftCamp : IComparer<Tile>
+{
+    int IComparer<Tile>.Compare(Tile a, Tile b)
+    {
+        var t1 = (Tile)a;
+        var t2 = (Tile)b;
+        if (t1.X > t2.X)
+        {
+            return 1;
+        }
+        if (t1.X < t2.X)
+        {
+            return -1;
+        }
+        else
+        {
+
+            if (t1.Y > t2.Y)
+            {
+                return 1;
+            }
+            if (t1.Y < t2.Y)
+            {
+                return -1;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+    }
+}
+
+class SortTileForRightCamp : IComparer<Tile>
+{
+    int IComparer<Tile>.Compare(Tile a, Tile b)
+    {
+        var t1 = (Tile)a;
+        var t2 = (Tile)b;
+        if (t1.X < t2.X)
+        {
+            return 1;
+        }
+        if (t1.X > t2.X)
+        {
+            return -1;
+        }
+        else
+        {
+            if (t1.Y > t2.Y)
+            {
+                return 1;
+            }
+            if (t1.Y < t2.Y)
+            {
+                return -1;
+            }
+            else
+            {
+                return 0;
+            }
+        }
     }
 }
