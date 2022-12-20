@@ -195,70 +195,60 @@ public static class Helper
         var result = new List<Tile>();
 
         var gameInstance = GameInstance.Instance;
-        var map = gameInstance.Map;
 
         int x = gameInstance.Direction == CampPosition.LEFT ? 0 : gameInstance.MapWidth - 1;
         for (var i = 0; i < gameInstance.MapWidth / 2; i++)
         {
             int y = i % 2 == 0 ? 0 : gameInstance.MapHeight - 1;
-            result.Add(FindClosestNonGrassNorRecyclerTile(map[gameInstance.MapWidth / 2, gameInstance.MapHeight / 2], Math.Abs(x - i), y));
+            int furthestY = y == 0 ? gameInstance.MapHeight - 1 : 0;
+            var objective = FindClosestValidTile(Math.Abs(x - i), y, furthestY);
+
+            if (objective != null)
+            {
+                result.Add(objective);
+                Logger.Instance.LogDebugMessage(objective.ToString());
+            }
         }
 
         return result;
     }
 
-    public static Tile FindClosestNonGrassNorRecyclerTile(Tile origin, int x, int y)
+    /**
+     * A tile is valid if it is not grass nor a recycler
+     */
+    public static Tile FindClosestValidTile(int x, int y, int furthestYToTest)
     {
-        Logger.Instance.LogDebugMessage("Closest tile from : " + x + " " + y);
+        Logger.Instance.LogDebugMessage("Closest valid tile from : " + x + " " + y);
 
         var gameInstance = GameInstance.Instance;
 
         var result = gameInstance.Map[x, y];
+
         if (result != null && !result.Recycler)
         {
+            Logger.Instance.LogDebugMessage("is itself");
             return result;
         }
 
-        //we might need to recalculate the direction here
-        var direction = 1;
-        var goal = y > gameInstance.MapHeight / 2 ? gameInstance.MapHeight - 1 : 0;
+        var direction = furthestYToTest - y < 0 ? -1 : 1;
         var n = y;
-        var i = x;
 
-        while (i != origin.X)
+        do
         {
-            while (n != goal)
+            n += direction;
+            result = gameInstance.Map[x, n];
+            if (result != null && !result.Recycler)
             {
-                n += direction;
-                result = gameInstance.Map[i, n];
-
-                if (result != null && !result.Recycler)
-                {
-                    return result;
-                }
+                Logger.Instance.LogDebugMessage("is : " + x + " " + n);
+                return result;
             }
 
-            direction *= -1;
-            goal = goal == 0 ? gameInstance.MapHeight - 1 : 0;
-            n = y;
-
-            while (n != goal)
-            {
-                n += direction;
-                result = gameInstance.Map[i, n];
-
-                if (result != null && !result.Recycler)
-                {
-                    return result;
-                }
-            }
-
-            //If we cannot find a suitable tile in the middle, we try one column closer to the unit
-            i -= (int) gameInstance.Direction;
         }
+        while (n != furthestYToTest);
 
-        //If we can't find any, we ll just return the origin
-        return origin;
+        //if we couldn't fin any, we return null
+        Logger.Instance.LogDebugMessage("is not found");
+        return result;
     }
 }
 
@@ -339,7 +329,8 @@ public class AIDefense : AI
     {
         int x = GameInstance.DefenseLine;
         int y = CalculateY();
-        Target = Helper.FindClosestNonGrassNorRecyclerTile(Location, x, y);
+        int furthestY = Location.Y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight : 0;
+        Target = Helper.FindClosestValidTile(x, y, furthestY) ?? Location;
     }
 }
 
@@ -491,7 +482,7 @@ public class TeamManager
     public void AssignMembersToTeams(List<Unit> units)
     {
         //TODO here is complex logic
-        var baseUnits = units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
+        var baseUnits = GameInstance.Instance.Direction == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
 
         foreach (var baseUnit in baseUnits)
         { 
