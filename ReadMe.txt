@@ -116,10 +116,10 @@ Refactoring/Improvements TODO:
 
 Next Steps:
 
-    - Introduce persistence between turns: stop re instantiating everything each turn, and keep track of some data
+    DONE- Introduce persistence between turns: stop re instantiating everything each turn, and keep track of some data
     - Make defense team spread across column EVENLY
-    - Make attack team move towards enemy positions
+    DONE- Make attack team move towards enemy positions
     - Make attack team spawn at first from defense team positions
     DONE- Make base team cover the base
     - Determine each turn which unit goes to which team
-    - Determine position of recyclers more efficiently: closest from baseline as possible
+    DONE- Determine position of recyclers more efficiently: closest from baseline as possible

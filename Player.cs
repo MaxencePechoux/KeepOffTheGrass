@@ -512,6 +512,10 @@ public class TeamsManager
     {
         //TODO here is complex logic
         var baseUnits = GameInstance.Instance.CampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
+        var attackUnit = GameInstance.Instance.CampPosition == CampPosition.RIGHT ? units.OrderBy(t => t.Tile.X).First() : units.OrderByDescending(t => t.Tile.X).First();
+
+        AttackTeam.AddNewMember(attackUnit);
+        units.Remove(attackUnit);
 
         foreach (var baseUnit in baseUnits)
         { 
@@ -521,7 +525,7 @@ public class TeamsManager
         
         foreach (var unit in units)
         {
-            AttackTeam.AddNewMember(unit);
+            DefenseTeam.AddNewMember(unit);
         }
     }
 
@@ -709,9 +713,9 @@ public class RecyclerFactory
         if (recyclers.Count < Constants.IDEAL_RECYCLERS 
             && gameInstance.MyMatter > Constants.MIN_MATTER_TO_BUILD)
         {
-            var suitableTile = FindSuitableTile();
+            var suitableTiles = FindSuitableTiles();
 
-            if (suitableTile != null)
+            foreach (var suitableTile in suitableTiles)
             {
                 logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
             }
@@ -721,17 +725,17 @@ public class RecyclerFactory
     /**
      * A tile is suitable to build if it is not too close from another recycler and it has enough srappable matter
      */
-    Tile FindSuitableTile()
+    IEnumerable<Tile> FindSuitableTiles()
     {
         foreach (var tile in buildableTiles.Keys)
         {
             if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
                 && !IsCloseToRecycler(tile))
+            //if (tile.X == gameInstance.TeamsManager.DefenseTeam.DefenseLine)
             {
-                return tile;
+                yield return tile;
             }
         }
-        return null;
     }
 
 
