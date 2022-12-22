@@ -83,7 +83,7 @@ public sealed class GameInstance
     public CampPosition CampPosition { get; private set; }
     public UnitManager UnitManager { get; private set; }
     public TeamsManager TeamsManager { get; private set; }
-    RecyclerFactory recyclerFactory;
+    public RecyclerFactory RecyclerFactory { get; private set; }
 
 
     public void Start()
@@ -94,7 +94,7 @@ public sealed class GameInstance
         MapHeight = int.Parse(inputs[1]);
         CampPosition = CampPosition.INIT;
         TeamsManager = new TeamsManager();
-        recyclerFactory = new RecyclerFactory();
+        RecyclerFactory = new RecyclerFactory();
         UnitManager = new UnitManager();
         ConvertibleTilesOnDefenseLine = new List<Tile>();
 
@@ -133,12 +133,12 @@ public sealed class GameInstance
 
                             if (tile.Recycler)
                             {
-                                recyclerFactory.AddRecycler(tile);
+                                RecyclerFactory.AddRecycler(tile);
                             }
 
                             if (tile.CanBuild)
                             {
-                                recyclerFactory.AddBuildableTile(tile);
+                                RecyclerFactory.AddBuildableTile(tile);
                             }
                         }
                         else if (tile.Owner == Constants.ENEMY)
@@ -174,7 +174,6 @@ public sealed class GameInstance
                         CampPosition = CampPosition.RIGHT;
                         SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
                         break;
-
                 }
 
                 BaseTeamObjectiveIndex = 0;
@@ -183,7 +182,7 @@ public sealed class GameInstance
             //hack to test
             if (CampPosition == CampPosition.LEFT)
             {
-                recyclerFactory.BuildRecyclersIfNeeded();
+                //recyclerFactory.BuildRecyclersIfNeeded();
 
                 TeamsManager.AssignMembersToTeams(UnitManager.Units);
                 TeamsManager.ManageTeamsActions();
@@ -206,7 +205,7 @@ public sealed class GameInstance
     void ResetBeforeNewTurn()
     {
         TeamsManager.ResetForNewTurn();
-        recyclerFactory.ResetForNewTurn();
+        RecyclerFactory.ResetForNewTurn();
         UnitManager.ResetForNewTurn();
         SortedConvertibleTiles.Clear();
         ConvertibleTilesOnDefenseLine.Clear();
@@ -329,7 +328,6 @@ public class AIDefense : AI
     public override void CalculateTarget()
     {
         var defenseTeam = GameInstance.TeamsManager.DefenseTeam;
-
         if (defenseTeam.HasTeamArrived)
         {
             if (GameInstance.ConvertibleTilesOnDefenseLine.Count > 0)
@@ -342,9 +340,14 @@ public class AIDefense : AI
                 {
                     Target = GameInstance.ConvertibleTilesOnDefenseLine.FirstOrDefault() ?? Location;
                 }
+                else
+                {
+                    Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
+                }
             }
             else
             {
+                GameInstance.RecyclerFactory.BuildRecyclersIfNeeded();
                 Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
             }
         }
@@ -724,28 +727,29 @@ public class RecyclerFactory
      */
     public void BuildRecyclersIfNeeded()
     {
-        if (recyclers.Count < Constants.IDEAL_RECYCLERS 
-            && gameInstance.MyMatter > Constants.MIN_MATTER_TO_BUILD)
+        //if (recyclers.Count < Constants.IDEAL_RECYCLERS 
+        //    && gameInstance.MyMatter > Constants.MIN_MATTER_TO_BUILD)
         {
             var suitableTiles = FindSuitableTiles();
 
             foreach (var suitableTile in suitableTiles)
             {
-                //logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
+                logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
             }
         }
     }
 
     /**
-     * A tile is suitable to build if it is not too close from another recycler and it has enough srappable matter
+     * A tile is suitable to build if it is not too close from another recycler and it has enough scrappable matter
      */
     IEnumerable<Tile> FindSuitableTiles()
     {
         foreach (var tile in buildableTiles.Keys)
         {
-            if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
-                && !IsCloseToRecycler(tile))
-            //if (tile.X == gameInstance.TeamsManager.DefenseTeam.DefenseLine)
+            //if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
+            //    && !IsCloseToRecycler(tile))
+            if ((tile.X >= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.CampPosition == CampPosition.LEFT)
+                || (tile.X <= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.CampPosition == CampPosition.RIGHT))
             {
                 yield return tile;
             }
