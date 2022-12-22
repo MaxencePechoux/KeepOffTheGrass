@@ -79,6 +79,7 @@ public sealed class GameInstance
     public int MyMatter { get; private set; }
     public int BaseTeamObjectiveIndex { get; set; }
     public List<Tile> BaseTeamObjectives { get; private set; }
+    public SortedList<Tile, Tile> SortedConvertibleTiles { get; private set; }
     public CampPosition CampPosition { get; private set; }
     public UnitManager UnitManager { get; private set; }
     public TeamsManager TeamsManager { get; private set; }
@@ -103,9 +104,6 @@ public sealed class GameInstance
             MyMatter = int.Parse(inputs[0]);
             int oppMatter = int.Parse(inputs[1]);
             Map = new Tile[MapWidth, MapHeight];
-            TeamsManager.ResetForNewTurn();
-            recyclerFactory.ResetForNewTurn();
-            UnitManager.ResetForNewTurn();
 
             for (int i = 0; i < MapHeight; i++)
             {
@@ -146,26 +144,61 @@ public sealed class GameInstance
                         {
                             TeamsManager.AttackTeam.AddEnemyTile(tile);
                         }
+
+                        if (!tile.Recycler && tile.Owner != Constants.ME && CampPosition != CampPosition.INIT)
+                        {
+                            SortedConvertibleTiles.Add(tile, tile);                            
+                        }
                     }
                 }
             }
 
             if (CampPosition == CampPosition.INIT)
             {
-                CampPosition = UnitManager.Units[0].Tile.X < MapWidth / 2 ? CampPosition.LEFT : CampPosition.RIGHT;
+                switch (UnitManager.Units[0].Tile.X < MapWidth / 2)
+                {
+                    case true:
+                        CampPosition = CampPosition.LEFT;
+                        SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
+                        break;
+                    case false:
+                        CampPosition = CampPosition.RIGHT;
+                        SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
+                        break;
+
+                }
+
                 BaseTeamObjectives = Helper.InitBaseTeamObjectives();
                 BaseTeamObjectiveIndex = 0;
             }
 
-            recyclerFactory.BuildRecyclersIfNeeded();
+            //hack to test
+            if (CampPosition == CampPosition.LEFT)
+            {
+                recyclerFactory.BuildRecyclersIfNeeded();
 
-            TeamsManager.AssignMembersToTeams(UnitManager.Units);
-            TeamsManager.ManageTeamsActions();
+                TeamsManager.AssignMembersToTeams(UnitManager.Units);
+                TeamsManager.ManageTeamsActions();
 
-            UnitManager.SpawnUnits();
+                UnitManager.SpawnUnits();
 
-            logger.PublishOutput();
+                logger.PublishOutput();
+            }
+            else
+            {
+                Console.WriteLine("WAIT");
+            }
+
+            ResetBeforeNewTurn();
         }
+    }
+
+    void ResetBeforeNewTurn()
+    {
+        TeamsManager.ResetForNewTurn();
+        recyclerFactory.ResetForNewTurn();
+        UnitManager.ResetForNewTurn();
+        SortedConvertibleTiles.Clear();
     }
 }
 
@@ -353,18 +386,18 @@ public class AIBase : AI
     public AIBase(Tile tile)
     {
         Location = tile;
-        Target = GameInstance.BaseTeamObjectives[GameInstance.BaseTeamObjectiveIndex];
     }
 
     public override void CalculateTarget()
     {
-        if (Target.Equals(Location))
+        var calculatedTarget = GameInstance.SortedConvertibleTiles.Keys.FirstOrDefault();
+        if (calculatedTarget == null)
         {
-            if (GameInstance.BaseTeamObjectiveIndex < GameInstance.BaseTeamObjectives.Count - 1)
-            {
-                GameInstance.BaseTeamObjectiveIndex++;
-                Target = GameInstance.BaseTeamObjectives[GameInstance.BaseTeamObjectiveIndex];
-            }
+            Target = Location;
+        }
+        else
+        {
+            Target = calculatedTarget;
         }
     }
 
@@ -587,12 +620,6 @@ public class AttackTeam : Team
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.ATTACK;
-        EnemyTiles = new SortedList<Tile, Tile>();
-    }
-
-    public override void ResetTeamForNewTurn()
-    {
-        base.ResetTeamForNewTurn();
 
         if (gameInstance.CampPosition == CampPosition.LEFT)
         {
@@ -602,6 +629,13 @@ public class AttackTeam : Team
         {
             EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
         }
+    }
+
+    public override void ResetTeamForNewTurn()
+    {
+        base.ResetTeamForNewTurn();
+
+        EnemyTiles.Clear();
     }
 
     public void AddEnemyTile(Tile enemyTile)
