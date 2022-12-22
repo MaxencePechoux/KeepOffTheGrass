@@ -17,6 +17,7 @@ public class Player
 public static class Constants
 {
     public const int IDEAL_RECYCLERS = 5;
+    public const int SCRAP_TO_BUILLD_OR_SPAWN = 10;
     public const int MIN_MATTER_TO_BUILD = 20;
     public const int MIN_MATTER_TO_SPAWN = 20;
     public const int MIN_SCRAPPABLE_TO_BUILD = 20;
@@ -76,10 +77,11 @@ public sealed class GameInstance
 
     public int MapWidth { get; private set; }
     public int MapHeight { get; private set; }
-    public int MyMatter { get; private set; }
+    public int MyMatter { get; set; }
     public int BaseTeamObjectiveIndex { get; set; }
     public SortedList<Tile, Tile> SortedConvertibleTiles { get; private set; }
     public List<Tile> ConvertibleTilesOnDefenseLine { get; private set; }
+    public List<Tile> SpawnableTiles { get; private set; }
     public CampPosition CampPosition { get; private set; }
     public UnitManager UnitManager { get; private set; }
     public TeamsManager TeamsManager { get; private set; }
@@ -97,6 +99,7 @@ public sealed class GameInstance
         RecyclerFactory = new RecyclerFactory();
         UnitManager = new UnitManager();
         ConvertibleTilesOnDefenseLine = new List<Tile>();
+        SpawnableTiles = new List<Tile>();
 
         // game loop
         while (true)
@@ -128,12 +131,16 @@ public sealed class GameInstance
                         {
                             if (tile.Units > 0)
                             {
-                                UnitManager.CreateUnits(tile);
+                                UnitManager.CreateUnits(tile, tile.Units);
                             }
 
                             if (tile.Recycler)
                             {
                                 RecyclerFactory.AddRecycler(tile);
+                            }
+                            else
+                            {
+                                SpawnableTiles.Add(tile);
                             }
 
                             if (tile.CanBuild)
@@ -179,23 +186,27 @@ public sealed class GameInstance
                 BaseTeamObjectiveIndex = 0;
             }
 
-            //hack to test
-            if (CampPosition == CampPosition.LEFT)
+            //hack to test against myself
+            //if (CampPosition == CampPosition.LEFT)
+            //{
+            //    Console.WriteLine("WAIT");
+            //}
+            //else
             {
-                //recyclerFactory.BuildRecyclersIfNeeded();
+                RecyclerFactory.BuildRecyclersIfNeeded();
 
                 TeamsManager.AssignMembersToTeams(UnitManager.Units);
                 TeamsManager.ManageTeamsActions();
 
+                //if (ConvertibleTilesOnDefenseLine.Count == 0)
+                //{
+                //    UnitManager.RequestSpawn(UnitTeam.DEFENSE, TeamsManager.DefenseTeam.Members.FirstOrDefault().Tile, MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN);
+                //    Logger.LogDebugMessage("Requesting " + (MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN) + " units at " + TeamsManager.DefenseTeam.Members.FirstOrDefault().Tile);
+                //}
 
-
-                //UnitManager.SpawnUnits();
+                UnitManager.SpawnUnits();
 
                 logger.PublishOutput();
-            }
-            else
-            {
-                Console.WriteLine("WAIT");
             }
 
             ResetBeforeNewTurn();
@@ -209,6 +220,7 @@ public sealed class GameInstance
         UnitManager.ResetForNewTurn();
         SortedConvertibleTiles.Clear();
         ConvertibleTilesOnDefenseLine.Clear();
+        SpawnableTiles.Clear();
     }
 }
 
@@ -347,7 +359,6 @@ public class AIDefense : AI
             }
             else
             {
-                GameInstance.RecyclerFactory.BuildRecyclersIfNeeded();
                 Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
             }
         }
@@ -426,47 +437,47 @@ public class Unit
 public class UnitManager
 {
     public List<Unit> Units { get; private set; }
-    List<Tile> AttackTeamSpawnRequests;
-    List<Tile> DefenseTeamSpawnRequests;
-    List<Tile> BaseTeamSpawnRequests;
+    Dictionary<Tile, int> AttackTeamSpawnRequests;
+    Dictionary<Tile, int> DefenseTeamSpawnRequests;
+    Dictionary<Tile, int> BaseTeamSpawnRequests;
     Logger logger = Logger.Instance;
 
     public UnitManager()
     {
-        AttackTeamSpawnRequests = new List<Tile>();
-        DefenseTeamSpawnRequests = new List<Tile>();
-        BaseTeamSpawnRequests = new List<Tile>();
+        AttackTeamSpawnRequests = new Dictionary<Tile, int>();
+        DefenseTeamSpawnRequests = new Dictionary<Tile, int>();
+        BaseTeamSpawnRequests = new Dictionary<Tile, int>();
         Units = new List<Unit>();
     }
 
     public void ResetForNewTurn()
     {
-        AttackTeamSpawnRequests = new List<Tile>();
-        DefenseTeamSpawnRequests = new List<Tile>();
-        BaseTeamSpawnRequests = new List<Tile>();
-        Units = new List<Unit>();
+        AttackTeamSpawnRequests.Clear();
+        DefenseTeamSpawnRequests.Clear();
+        BaseTeamSpawnRequests.Clear();
+        Units.Clear();
     }
 
-    public void CreateUnits(Tile tile)
+    public void CreateUnits(Tile tile, int unitCount)
     {
-        for (var i = 0; i < tile.Units; i++)
+        for (var i = 0; i < unitCount; i++)
         {
             Units.Add(new Unit(tile));
         }
     }
 
-    public void RequestSpawn(UnitTeam team, Tile tile)
+    public void RequestSpawn(UnitTeam team, Tile tile, int unitCount)
     {
         switch(team)
         {
             case UnitTeam.ATTACK:
-                AttackTeamSpawnRequests.Add(tile);
+                AttackTeamSpawnRequests.TryAdd(tile, unitCount);
                 break;
             case UnitTeam.DEFENSE:
-                DefenseTeamSpawnRequests.Add(tile);
+                DefenseTeamSpawnRequests.TryAdd(tile, unitCount);
                 break;
             case UnitTeam.BASE:
-                BaseTeamSpawnRequests.Add(tile);
+                BaseTeamSpawnRequests.TryAdd(tile, unitCount);
                 break;
 
         }
@@ -479,11 +490,12 @@ public class UnitManager
         SpawnTeamRequests(BaseTeamSpawnRequests);
     }
 
-    void SpawnTeamRequests(List<Tile> teamRequests)
+    void SpawnTeamRequests(Dictionary<Tile, int> teamRequests)
     {
-        foreach (Tile tile in teamRequests)
+        foreach (var unitsToSpawn in teamRequests)
         {
-            logger.LogAction(Action.Spawn(1, tile.X, tile.Y));
+            logger.LogAction(Action.Spawn(unitsToSpawn.Value, unitsToSpawn.Key.X, unitsToSpawn.Key.Y));
+            GameInstance.Instance.MyMatter -= unitsToSpawn.Value * Constants.SCRAP_TO_BUILLD_OR_SPAWN;
         }
     }
 }
@@ -510,6 +522,14 @@ public class TeamsManager
 
     public void AssignMembersToTeams(List<Unit> units)
     {
+        if (units.Count == 0)
+        {
+            var tileToSpawnTo = GameInstance.Instance.SpawnableTiles.FirstOrDefault();
+            var qty = GameInstance.Instance.MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN;
+            GameInstance.Instance.UnitManager.RequestSpawn(UnitTeam.DEFENSE, tileToSpawnTo, qty);
+            GameInstance.Instance.UnitManager.CreateUnits(tileToSpawnTo, qty);
+        }
+
         //TODO here is complex logic
         var baseUnits = GameInstance.Instance.CampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
         var attackUnit = GameInstance.Instance.CampPosition == CampPosition.RIGHT ? units.OrderBy(t => t.Tile.X).First() : units.OrderByDescending(t => t.Tile.X).First();
@@ -531,15 +551,7 @@ public class TeamsManager
 
     public void ManageTeamsActions()
     {
-        //SendTeamsSpawnRequestsToFactory();
         MoveTeams();
-    }
-
-    void SendTeamsSpawnRequestsToFactory()
-    {
-        AttackTeam.SendSpawnRequestsToFactory();
-        DefenseTeam.SendSpawnRequestsToFactory();
-        BaseTeam.SendSpawnRequestsToFactory();
     }
 
     void MoveTeams()
@@ -575,8 +587,6 @@ public abstract class Team
             logger.LogAction(unit.GetAction());
         }
     }
-
-    public abstract void SendSpawnRequestsToFactory();
 }
 
 public class AttackTeam : Team
@@ -608,11 +618,6 @@ public class AttackTeam : Team
     public void AddEnemyTile(Tile enemyTile)
     {
         EnemyTiles.Add(enemyTile, null);
-    }
-
-    public override void SendSpawnRequestsToFactory()
-    {
-
     }
 }
 
@@ -665,11 +670,6 @@ public class DefenseTeam : Team
             }
         }
     }
-
-    public override void SendSpawnRequestsToFactory()
-    {
-       
-    }
 }
 
 public class BaseTeam : Team
@@ -678,11 +678,6 @@ public class BaseTeam : Team
     {
         Members = new List<Unit>();
         TeamType = UnitTeam.BASE;
-    }
-
-    public override void SendSpawnRequestsToFactory()
-    {
-        
     }
 }
 
@@ -735,6 +730,7 @@ public class RecyclerFactory
             foreach (var suitableTile in suitableTiles)
             {
                 logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
+                gameInstance.MyMatter -= Constants.SCRAP_TO_BUILLD_OR_SPAWN;
             }
         }
     }
