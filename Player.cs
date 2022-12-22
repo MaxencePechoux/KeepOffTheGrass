@@ -209,6 +209,7 @@ public sealed class GameInstance
         recyclerFactory.ResetForNewTurn();
         UnitManager.ResetForNewTurn();
         SortedConvertibleTiles.Clear();
+        ConvertibleTilesOnDefenseLine.Clear();
     }
 }
 
@@ -271,7 +272,7 @@ public static class Helper
         }
         while (n != furthestYToTest);
 
-        //if we couldn't fin any, we return null
+        //if we couldn't find any, we return null
         Logger.LogDebugMessage("is not found");
         return result;
     }
@@ -331,13 +332,20 @@ public class AIDefense : AI
 
         if (defenseTeam.HasTeamArrived)
         {
-            if (Location.Y == defenseTeam.BottomUnitTile.Y)
+            if (GameInstance.ConvertibleTilesOnDefenseLine.Count > 0)
             {
-                Target = GameInstance.ConvertibleTilesOnDefenseLine.LastOrDefault() ?? Location;
+                if (Location.Y == defenseTeam.BottomUnitTile.Y)
+                {
+                    Target = GameInstance.ConvertibleTilesOnDefenseLine.LastOrDefault() ?? Location;
+                }
+                else if (Location.Y == defenseTeam.TopUnitTile.Y)
+                {
+                    Target = GameInstance.ConvertibleTilesOnDefenseLine.FirstOrDefault() ?? Location;
+                }
             }
-            else if (Location.Y == defenseTeam.TopUnitTile.Y)
+            else
             {
-                Target = GameInstance.ConvertibleTilesOnDefenseLine.FirstOrDefault() ?? Location;
+                Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
             }
         }
         else
@@ -685,12 +693,6 @@ public class RecyclerFactory
     public RecyclerFactory()
     {
         recyclers = new List<Tile>();
-        buildableTiles = new SortedList<Tile, Tile>();
-    }
-
-    public void ResetForNewTurn()
-    {
-        recyclers = new List<Tile>();
         if (gameInstance.CampPosition == CampPosition.LEFT)
         {
             buildableTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
@@ -699,6 +701,12 @@ public class RecyclerFactory
         {
             buildableTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
         }
+    }
+
+    public void ResetForNewTurn()
+    {
+        recyclers.Clear();
+        buildableTiles.Clear();
     }
 
     public void AddRecycler(Tile recycler)
