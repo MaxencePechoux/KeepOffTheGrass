@@ -35,7 +35,7 @@ public static class Constants
 public enum CampPosition
 {
     RIGHT = -1,
-    INIT = 0,
+    MIDDLE = 0,
     LEFT = 1
 }
 
@@ -82,7 +82,8 @@ public sealed class GameInstance
     public SortedList<Tile, Tile> SortedConvertibleTiles { get; private set; }
     public List<Tile> ConvertibleTilesOnDefenseLine { get; private set; }
     public List<Tile> SpawnableTiles { get; private set; }
-    public CampPosition CampPosition { get; private set; }
+    public CampPosition MyCampPosition { get; private set; }
+    public CampPosition EnemyCampPosition { get; private set; }
     public UnitManager UnitManager { get; private set; }
     public TeamsManager TeamsManager { get; private set; }
     public RecyclerFactory RecyclerFactory { get; private set; }
@@ -94,7 +95,8 @@ public sealed class GameInstance
         inputs = Console.ReadLine().Split(' ');
         MapWidth = int.Parse(inputs[0]);
         MapHeight = int.Parse(inputs[1]);
-        CampPosition = CampPosition.INIT;
+        MyCampPosition = CampPosition.MIDDLE;
+        EnemyCampPosition = CampPosition.MIDDLE;
         TeamsManager = new TeamsManager();
         RecyclerFactory = new RecyclerFactory();
         UnitManager = new UnitManager();
@@ -155,7 +157,7 @@ public sealed class GameInstance
 
                         if (!tile.Recycler && tile.Owner != Constants.ME)
                         {
-                            if (CampPosition != CampPosition.INIT)
+                            if (MyCampPosition != CampPosition.MIDDLE)
                             {
                                 SortedConvertibleTiles.Add(tile, tile);
                             }
@@ -169,16 +171,18 @@ public sealed class GameInstance
                 }
             }
 
-            if (CampPosition == CampPosition.INIT)
+            if (MyCampPosition == CampPosition.MIDDLE)
             {
                 switch (UnitManager.Units[0].Tile.X < MapWidth / 2)
                 {
                     case true:
-                        CampPosition = CampPosition.LEFT;
+                        MyCampPosition = CampPosition.LEFT;
+                        EnemyCampPosition = CampPosition.RIGHT;
                         SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
                         break;
                     case false:
-                        CampPosition = CampPosition.RIGHT;
+                        MyCampPosition = CampPosition.RIGHT;
+                        EnemyCampPosition = CampPosition.LEFT;
                         SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
                         break;
                 }
@@ -187,7 +191,7 @@ public sealed class GameInstance
             }
 
             //hack to test against myself
-            //if (CampPosition == CampPosition.LEFT)
+            //if (MyCampPosition == CampPosition.LEFT)
             //{
             //    Console.WriteLine("WAIT");
             //}
@@ -198,11 +202,16 @@ public sealed class GameInstance
                 TeamsManager.AssignMembersToTeams(UnitManager.Units);
                 TeamsManager.ManageTeamsActions();
 
-                //if (ConvertibleTilesOnDefenseLine.Count == 0)
-                //{
-                //    UnitManager.RequestSpawn(UnitTeam.DEFENSE, TeamsManager.DefenseTeam.Members.FirstOrDefault().Tile, MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN);
-                //    Logger.LogDebugMessage("Requesting " + (MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN) + " units at " + TeamsManager.DefenseTeam.Members.FirstOrDefault().Tile);
-                //}
+                //Helper.LogTeamCompositions(logger, UnitManager);
+
+                if (ConvertibleTilesOnDefenseLine.Count == 0)
+                {
+                    if (TeamsManager.DefenseTeam.Members.FirstOrDefault(u => u.Camp == EnemyCampPosition) is Unit unit)
+                    {
+                        UnitManager.RequestSpawn(UnitTeam.DEFENSE, unit.Tile, MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN);
+                        Logger.LogDebugMessage("Requesting " + (MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN) + " units at " + unit.Tile);
+                    }
+                }
 
                 UnitManager.SpawnUnits();
 
@@ -248,6 +257,25 @@ public static class Helper
         {
             Logger.LogDebugMessage(unit.ToString());
         }
+    }
+
+    public static CampPosition GetCampForTile(GameInstance gameInstance, int x)
+    {
+        CampPosition result;
+        if (x > (gameInstance.MapWidth / 2))
+        {
+            result = CampPosition.RIGHT;
+
+        }
+        else if (x < (gameInstance.MapWidth / 2))
+        {
+            result = CampPosition.LEFT;
+        }
+        else
+        {
+            result = CampPosition.MIDDLE;
+        }
+        return result;
     }
 
     /**
@@ -394,6 +422,7 @@ public class Unit
 {
     public Tile Tile { get; }
     public UnitTeam Team { get; private set; }
+    public CampPosition Camp => Tile.Camp;
     IAI ai;
 
     public Unit(Tile tile)
@@ -427,7 +456,7 @@ public class Unit
 
     public override string ToString()
     {
-        return "I am a member of " + Team + " located at [" + Tile.X + "," + Tile.Y + "]!";
+        return "I am a member of " + Team + " located at [" + Tile.X + "," + Tile.Y + "], in " + Camp + " Camp!";
     }
 }
 
@@ -531,8 +560,8 @@ public class TeamsManager
         }
 
         //TODO here is complex logic
-        var baseUnits = GameInstance.Instance.CampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
-        var attackUnit = GameInstance.Instance.CampPosition == CampPosition.RIGHT ? units.OrderBy(t => t.Tile.X).First() : units.OrderByDescending(t => t.Tile.X).First();
+        var baseUnits = GameInstance.Instance.MyCampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
+        var attackUnit = GameInstance.Instance.MyCampPosition == CampPosition.RIGHT ? units.OrderBy(t => t.Tile.X).First() : units.OrderByDescending(t => t.Tile.X).First();
 
         //AttackTeam.AddNewMember(attackUnit);
         //units.Remove(attackUnit);
@@ -598,7 +627,7 @@ public class AttackTeam : Team
         Members = new List<Unit>();
         TeamType = UnitTeam.ATTACK;
 
-        if (gameInstance.CampPosition == CampPosition.LEFT)
+        if (gameInstance.MyCampPosition == CampPosition.LEFT)
         {
             EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
         }
@@ -691,7 +720,7 @@ public class RecyclerFactory
     public RecyclerFactory()
     {
         recyclers = new List<Tile>();
-        if (gameInstance.CampPosition == CampPosition.LEFT)
+        if (gameInstance.MyCampPosition == CampPosition.LEFT)
         {
             buildableTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
         }
@@ -744,8 +773,8 @@ public class RecyclerFactory
         {
             //if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
             //    && !IsCloseToRecycler(tile))
-            if ((tile.X >= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.CampPosition == CampPosition.LEFT)
-                || (tile.X <= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.CampPosition == CampPosition.RIGHT))
+            if ((tile.X >= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.MyCampPosition == CampPosition.LEFT)
+                || (tile.X <= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.MyCampPosition == CampPosition.RIGHT))
             {
                 yield return tile;
             }
@@ -875,6 +904,19 @@ public class Tile
     public bool InRangeOfRecycler { get; }
     GameInstance gameInstance = GameInstance.Instance;
     Tile[,] map = GameInstance.Instance.Map;
+
+    public CampPosition Camp 
+    {
+        get
+        {
+            if (!camp.HasValue)
+            {
+                camp = Helper.GetCampForTile(gameInstance, X);
+            }
+            return camp.Value;
+        }
+    }
+    CampPosition? camp;
 
     public int TotalScrappableAmount
     {
