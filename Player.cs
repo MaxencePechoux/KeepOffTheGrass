@@ -5,824 +5,1128 @@ using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 
-
-public class Player
+/**
+ * Auto-generated code below aims at helping you parse
+ * the standard input according to the problem statement.
+ **/
+class Player
 {
     static void Main(string[] args)
     {
-        GameInstance.Instance.Start();
-    }
-}
-
-public static class Constants
-{
-    public const int IDEAL_RECYCLERS = 5;
-    public const int SCRAP_TO_BUILLD_OR_SPAWN = 10;
-    public const int MIN_MATTER_TO_BUILD = 20;
-    public const int MIN_MATTER_TO_SPAWN = 20;
-    public const int MIN_SCRAPPABLE_TO_BUILD = 20;
-    public const int BASE_TEAM_UNITS = 1;
-    public const int NEUTRAL = -1;
-    public const int ME = 1;
-    public const int ENEMY = 0;
-    public const string MOVE = "MOVE";
-    public const string BUILD = "BUILD";
-    public const string SPAWN = "SPAWN";
-    public const string WAIT = "WAIT";
-    public const string MESSAGE = "MESSAGE";
-}
-
-public enum CampPosition
-{
-    RIGHT = -1,
-    MIDDLE = 0,
-    LEFT = 1
-}
-
-public enum UnitTeam
-{
-    ATTACK,
-    DEFENSE,
-    BASE
-}
-
-public enum Direction
-{
-    UP = -1,
-    DOWN = 1
-}
-
-public sealed class GameInstance
-{
-    private static GameInstance instance;
-    Logger logger = Logger.Instance;
-
-    private GameInstance()
-    {
-    }
-
-    public static GameInstance Instance
-    {
-        get
-        {
-            if (instance == null)
-            {
-                instance = new GameInstance();
-            }
-            return instance;
-        }
-    }
-
-    public Tile[,] Map { get; private set; }
-
-    public int MapWidth { get; private set; }
-    public int MapHeight { get; private set; }
-    public int MyMatter { get; set; }
-    public int BaseTeamObjectiveIndex { get; set; }
-    public SortedList<Tile, Tile> SortedConvertibleTiles { get; private set; }
-    public List<Tile> ConvertibleTilesOnDefenseLine { get; private set; }
-    public List<Tile> SpawnableTiles { get; private set; }
-    public CampPosition MyCampPosition { get; private set; }
-    public CampPosition EnemyCampPosition { get; private set; }
-    public UnitManager UnitManager { get; private set; }
-    public TeamsManager TeamsManager { get; private set; }
-    public RecyclerFactory RecyclerFactory { get; private set; }
-
-
-    public void Start()
-    {
+        var worldInstance = World.Instance;
+        var logger = Logger.Instance;
         string[] inputs;
         inputs = Console.ReadLine().Split(' ');
-        MapWidth = int.Parse(inputs[0]);
-        MapHeight = int.Parse(inputs[1]);
-        MyCampPosition = CampPosition.MIDDLE;
-        EnemyCampPosition = CampPosition.MIDDLE;
-        TeamsManager = new TeamsManager();
-        RecyclerFactory = new RecyclerFactory();
-        UnitManager = new UnitManager();
-        ConvertibleTilesOnDefenseLine = new List<Tile>();
-        SpawnableTiles = new List<Tile>();
+        int width = int.Parse(inputs[0]);
+        int height = int.Parse(inputs[1]);
+
+        worldInstance.GetWorldStates().SetState("shouldSpawnTank", 1);
+
+        //temp hack
+        int init = 0;
 
         // game loop
         while (true)
         {
             inputs = Console.ReadLine().Split(' ');
-            MyMatter = int.Parse(inputs[0]);
+            Helper.NewTurnCleanUp(worldInstance);
+            worldInstance.GetWorldStates().SetState("matter", int.Parse(inputs[0]));
             int oppMatter = int.Parse(inputs[1]);
-            Map = new Tile[MapWidth, MapHeight];
-
-            for (int i = 0; i < MapHeight; i++)
+            for (int i = 0; i < height; i++)
             {
-                for (int j = 0; j < MapWidth; j++)
+                for (int j = 0; j < width; j++)
                 {
                     inputs = Console.ReadLine().Split(' ');
-                    var scrapAmount = int.Parse(inputs[0]);
-                    if (scrapAmount > 0)
+                    int scrapAmount = int.Parse(inputs[0]);
+                    int owner = int.Parse(inputs[1]); // 1 = me, 0 = foe, -1 = neutral
+                    int units = int.Parse(inputs[2]);
+                    bool recycler = int.Parse(inputs[3]) == 1;
+                    bool canBuild = int.Parse(inputs[4]) == 1;
+                    bool canSpawn = int.Parse(inputs[5]) == 1;
+                    bool inRangeOfRecycler = int.Parse(inputs[6]) == 1;
+
+                    var tile = new Tile(j, i);
+
+                    if (owner == 1)
                     {
-                        var tile = new Tile(j, i,
-                            scrapAmount,
-                            int.Parse(inputs[1]),
-                            int.Parse(inputs[2]),
-                            int.Parse(inputs[3]) == 1,
-                            int.Parse(inputs[4]) == 1,
-                            int.Parse(inputs[5]) == 1,
-                            int.Parse(inputs[6]) == 1);
-                        Map[j, i] = tile;
-
-                        if (tile.Owner == Constants.ME)
+                        if (canBuild)
                         {
-                            if (tile.Units > 0)
-                            {
-                                UnitManager.CreateUnits(tile, tile.Units);
-                            }
-
-                            if (tile.Recycler)
-                            {
-                                RecyclerFactory.AddRecycler(tile);
-                            }
-                            else
-                            {
-                                SpawnableTiles.Add(tile);
-                            }
-
-                            if (tile.CanBuild)
-                            {
-                                RecyclerFactory.AddBuildableTile(tile);
-                            }
-                        }
-                        else if (tile.Owner == Constants.ENEMY)
-                        {
-                            TeamsManager.AttackTeam.AddEnemyTile(tile);
+                            worldInstance.GetQueue("recyclerSpawnPoints").AddResource(new GameObject(tile));
+                            worldInstance.GetWorldStates().ModifyState("RecyclerSpawnPoints", 1);
                         }
 
-                        if (!tile.Recycler && tile.Owner != Constants.ME)
+                        if (canSpawn)
                         {
-                            if (MyCampPosition != CampPosition.MIDDLE)
-                            {
-                                SortedConvertibleTiles.Add(tile, tile);
-                            }
-                            
-                            if (j == TeamsManager.DefenseTeam.DefenseLine)
-                            {
-                                ConvertibleTilesOnDefenseLine.Add(tile);
-                            }
+                            worldInstance.GetQueue("tankSpawnPoints").AddResource(new GameObject(tile));
+                            worldInstance.GetWorldStates().ModifyState("TankSpawnPoints", 1);
+                        }
+
+                        if (units > 0)
+                        {
+                            worldInstance.GetQueue("tanks").AddResource(Helper.InitTank(units, tile));
+                            worldInstance.GetWorldStates().ModifyState("Tanks", 1);
+                        }
+
+                        if (recycler)
+                        {
+                            worldInstance.GetQueue("recyclers").AddResource(new Recycler(tile));
+                            worldInstance.GetWorldStates().ModifyState("Recyclers", 1);
+                        }
+
+                        //temp hack
+                        if (init == 0)
+                        {
+                            init = j < width / 2 ? 1 : -1;
+                        }
+                    }
+                    else if (owner == 0 && !recycler)
+                    {
+
+                        if (units > 0)
+                        {
+
+                            worldInstance.GetQueue("enemyTankTiles").AddResource(new EnemyTankTile(tile, units));
+                            worldInstance.GetWorldStates().ModifyState("EnemyTankTiles", 1);
+                        }
+                        else
+                        {
+                            worldInstance.GetQueue("enemyTiles").AddResource(new EnemyTile(tile));
+                            worldInstance.GetWorldStates().ModifyState("EnemyTiles", 1);
+                        }
+                    }
+                    else
+                    {
+                        if (scrapAmount > 0)
+                        {
+                            worldInstance.GetQueue("scrapTiles").AddResource(new ScrapTile(tile, scrapAmount));
+                            worldInstance.GetWorldStates().ModifyState("ScrapTiles", 1);
                         }
                     }
                 }
             }
 
-            if (MyCampPosition == CampPosition.MIDDLE)
+            if (worldInstance.GetWorldStates().GetState("Recyclers") < 3)
             {
-                switch (UnitManager.Units[0].Tile.X < MapWidth / 2)
-                {
-                    case true:
-                        MyCampPosition = CampPosition.LEFT;
-                        EnemyCampPosition = CampPosition.RIGHT;
-                        SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
-                        break;
-                    case false:
-                        MyCampPosition = CampPosition.RIGHT;
-                        EnemyCampPosition = CampPosition.LEFT;
-                        SortedConvertibleTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
-                        break;
-                }
-
-                BaseTeamObjectiveIndex = 0;
-            }
-
-            //hack to test against myself
-            //if (MyCampPosition == CampPosition.LEFT)
-            //{
-            //    Console.WriteLine("WAIT");
-            //}
-            //else
-            {
-                RecyclerFactory.BuildRecyclersIfNeeded();
-
-                TeamsManager.AssignMembersToTeams(UnitManager.Units);
-                TeamsManager.ManageTeamsActions();
-
-                //Helper.LogTeamCompositions(logger, UnitManager);
-
-                if (ConvertibleTilesOnDefenseLine.Count == 0)
-                {
-                    if (TeamsManager.DefenseTeam.Members.FirstOrDefault(u => u.Camp == EnemyCampPosition) is Unit unit)
-                    {
-                        UnitManager.RequestSpawn(UnitTeam.DEFENSE, unit.Tile, MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN);
-                        Logger.LogDebugMessage("Requesting " + (MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN) + " units at " + unit.Tile);
-                    }
-                }
-
-                UnitManager.SpawnUnits();
-
-                logger.PublishOutput();
-            }
-
-            ResetBeforeNewTurn();
-        }
-    }
-
-    void ResetBeforeNewTurn()
-    {
-        TeamsManager.ResetForNewTurn();
-        RecyclerFactory.ResetForNewTurn();
-        UnitManager.ResetForNewTurn();
-        SortedConvertibleTiles.Clear();
-        ConvertibleTilesOnDefenseLine.Clear();
-        SpawnableTiles.Clear();
-    }
-}
-
-public static class Helper
-{
-    public static void TestRandomScrappableAmounts(Logger logger, Tile[,] map, int mapWidth, int mapHeight, int nbOfTests)
-    {
-        var rnd = new Random();
-        var i = 0;
-        while (i < nbOfTests)
-        {
-            var x = rnd.Next(mapWidth);
-            var y = rnd.Next(mapHeight);
-            if (map[x, y] != null)
-            {
-                Logger.LogDebugMessage("Tile [" + x + "," + y + "]: Total: " + map[x, y].TotalScrappableAmount);
-                i++;
-            }
-        }
-    }
-
-    public static void LogTeamCompositions(Logger logger, UnitManager unitManager)
-    {
-        foreach (var unit in unitManager.Units)
-        {
-            Logger.LogDebugMessage(unit.ToString());
-        }
-    }
-
-    public static CampPosition GetCampForTile(GameInstance gameInstance, int x)
-    {
-        CampPosition result;
-        if (x > (gameInstance.MapWidth / 2))
-        {
-            result = CampPosition.RIGHT;
-
-        }
-        else if (x < (gameInstance.MapWidth / 2))
-        {
-            result = CampPosition.LEFT;
-        }
-        else
-        {
-            result = CampPosition.MIDDLE;
-        }
-        return result;
-    }
-
-    /**
-     * A tile is valid if it is neither grass nor a recycler
-     */
-    public static Tile FindClosestValidTile(int x, int y, int furthestYToTest)
-    {
-        Logger.LogDebugMessage("Closest valid tile from : " + x + " " + y);
-
-        var gameInstance = GameInstance.Instance;
-
-        var result = gameInstance.Map[x, y];
-
-        if (result != null && !result.Recycler)
-        {
-            Logger.LogDebugMessage("is itself");
-            return result;
-        }
-
-        var direction = furthestYToTest - y < 0 ? -1 : 1;
-        var n = y;
-
-        do
-        {
-            n += direction;
-            result = gameInstance.Map[x, n];
-            if (result != null && !result.Recycler)
-            {
-                Logger.LogDebugMessage("is : " + x + " " + n);
-                return result;
-            }
-
-        }
-        while (n != furthestYToTest);
-
-        //if we couldn't find any, we return null
-        Logger.LogDebugMessage("is not found");
-        return result;
-    }
-}
-
-public interface IAI
-{
-    string GetAction();
-    void CalculateTarget();
-}
-
-public abstract class AI : IAI
-{
-    public string GetAction()
-    {
-        CalculateTarget();
-        return Action.Move(1, Location.X, Location.Y, Target.X, Target.Y);
-    }
-
-    public abstract void CalculateTarget();
-
-    protected Tile Location { get; set; }
-    protected Tile Target { get; set; }
-    protected GameInstance GameInstance = GameInstance.Instance;
-}
-
-public class AIAttack : AI
-{
-    public AIAttack(Tile tile)
-    {
-        Location = tile;
-    }
-
-    public override void CalculateTarget()
-    {
-        foreach (var tile in GameInstance.Instance.TeamsManager.AttackTeam.EnemyTiles.Keys)
-        { 
-            if (!tile.Recycler)
-            {
-                Target = tile;
-                return;
-            }
-        }
-    }
-}
-
-public class AIDefense : AI
-{
-    public AIDefense(Tile tile)
-    {
-        Location = tile;
-    }
-
-    public override void CalculateTarget()
-    {
-        var defenseTeam = GameInstance.TeamsManager.DefenseTeam;
-        if (defenseTeam.HasTeamArrived)
-        {
-            if (GameInstance.ConvertibleTilesOnDefenseLine.Count > 0)
-            {
-                if (Location.Y == defenseTeam.BottomUnitTile.Y)
-                {
-                    Target = GameInstance.ConvertibleTilesOnDefenseLine.LastOrDefault() ?? Location;
-                }
-                else if (Location.Y == defenseTeam.TopUnitTile.Y)
-                {
-                    Target = GameInstance.ConvertibleTilesOnDefenseLine.FirstOrDefault() ?? Location;
-                }
-                else
-                {
-                    Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
-                }
+                worldInstance.GetWorldStates().SetState("shouldSpawnRecycler", 1);
             }
             else
             {
-                Target = GameInstance.TeamsManager.AttackTeam.EnemyTiles.Keys.FirstOrDefault() ?? Location;
+                worldInstance.GetWorldStates().RemoveState("shouldSpawnRecycler");
+            }
+
+            // Write an action using Console.WriteLine()
+            // To debug: Console.Error.WriteLine("Debug messages...");
+
+            //Logger.LogWorldStates();
+
+            //Logger.PrintQueue("enemyTankTiles");
+
+            var tankSpawner = Helper.InitTankSpawner(worldInstance.GetWorldStates().GetState("matter") / 20);
+            var recyclerSpawner = Helper.InitRecyclerSpawner();
+            recyclerSpawner.Execute();
+            tankSpawner.Execute();
+
+            while (worldInstance.GetQueue("tanks").RemoveResource() is Tank tank)
+            {
+                tank.Execute();
+            }
+
+            //temp hack
+            if (init == -1)
+            {
+                Console.WriteLine("WAIT;");
+            }
+            else
+            {
+                logger.PublishOutput();
+            }
+        }
+    }
+
+    
+}
+
+#region GOAP
+
+#region WorldStates
+
+public class WorldState
+{
+    public string key;
+    public int value;
+}
+
+public class WorldStates
+{
+    public Dictionary<string, int> States { get; }
+
+    public WorldStates()
+    {
+        States = new Dictionary<string, int>();
+    }
+
+    public int GetState(string key)
+    {
+        return HasState(key) ? States[key] : 0;
+    }
+
+    public bool HasState(string key)
+    {
+        return States.ContainsKey(key);
+    }
+
+    public void AddState(string key, int value)
+    {
+        States.Add(key, value);
+    }
+
+    public void ModifyState(string key, int value)
+    {
+        if (States.ContainsKey(key))
+        {
+            States[key] += value;
+            if (States[key] <= 0)
+            {
+                RemoveState(key);
             }
         }
         else
         {
-            Target = Helper.FindClosestValidTile(defenseTeam.DefenseLine, Location.Y, Location.Y > GameInstance.MapHeight / 2 ? GameInstance.MapHeight : 0);
+            AddState(key, value);
         }
     }
-}
 
-public class AIBase : AI
-{
-    public AIBase(Tile tile)
+    public void RemoveState(string key)
     {
-        Location = tile;
+        if (States.ContainsKey(key))
+        {
+            States.Remove(key);
+        }
     }
 
-    public override void CalculateTarget()
+    public void SetState(string key, int value)
     {
-        var calculatedTarget = GameInstance.SortedConvertibleTiles.Keys.FirstOrDefault();
-        if (calculatedTarget == null)
+        if (States.ContainsKey(key))
         {
-            Target = Location;
+            States[key] = value;
         }
         else
         {
-            Target = calculatedTarget;
+            States.Add(key, value);
         }
     }
 }
 
-public class Unit
-{
-    public Tile Tile { get; }
-    public UnitTeam Team { get; private set; }
-    public CampPosition Camp => Tile.Camp;
-    IAI ai;
+#endregion
 
-    public Unit(Tile tile)
+#region World
+
+public class ResourceQueue
+{
+    public Queue<GameObject> que = new Queue<GameObject>();
+    public string tag;
+    public string modState;
+
+    public ResourceQueue()
     {
-        Tile = tile;
     }
 
-    public void AssignTeam(UnitTeam team)
+    public void AddResource(GameObject r)
     {
-        switch (team)
+        que.Enqueue(r);
+    }
+
+    public GameObject RemoveResource()
+    {
+        if (que.Count == 0) return null;
+
+        return que.Dequeue();
+    }
+
+    public void ClearQueue()
+    {
+        que.Clear();
+    }
+}
+
+public sealed class World
+{
+    private static readonly World instance = new World();
+    private static WorldStates worldStates;
+    private static ResourceQueue recyclers;
+    private static ResourceQueue tanks;
+    private static ResourceQueue enemyTankTiles;
+    private static ResourceQueue enemyTiles;
+    private static ResourceQueue scrapTiles;
+    private static ResourceQueue tankTargets;
+    private static ResourceQueue recyclerSpawnPoints;
+    private static ResourceQueue tankSpawnPoints;
+    private static Dictionary<string, ResourceQueue> resources = new Dictionary<string, ResourceQueue>();
+
+    static World()
+    {
+        worldStates = new WorldStates();
+        recyclers = new ResourceQueue();
+        tanks = new ResourceQueue();
+        enemyTankTiles = new ResourceQueue();
+        enemyTiles = new ResourceQueue();
+        scrapTiles = new ResourceQueue();
+        tankTargets = new ResourceQueue();
+        recyclerSpawnPoints = new ResourceQueue();
+        tankSpawnPoints = new ResourceQueue();
+        resources.Add("recyclers", recyclers);
+        resources.Add("tanks", tanks);
+        resources.Add("enemyTankTiles", enemyTankTiles);
+        resources.Add("enemyTiles", enemyTiles);
+        resources.Add("scrapTiles", scrapTiles);
+        resources.Add("tankTargets", tankTargets);
+        resources.Add("recyclerSpawnPoints", recyclerSpawnPoints);
+        resources.Add("tankSpawnPoints", tankSpawnPoints);
+    }
+
+    public ResourceQueue GetQueue(string type)
+    {
+        return resources[type];
+    }
+
+    public void ClearQueue(string type)
+    {
+        resources[type].ClearQueue();
+    }
+
+    private World()
+    {
+    }
+
+    public static World Instance => instance;
+
+    public WorldStates GetWorldStates()
+    {
+        return worldStates;
+    }
+}
+
+#endregion
+
+#region Planner
+
+public class Node
+{
+    public Node parent;
+    public float cost;
+    public Dictionary<string, int> state;
+    public Action action;
+
+    public Node(Node parent, float cost, Dictionary<string, int> allStates, Action action)
+    {
+        this.parent = parent;
+        this.cost = cost;
+        this.state = new Dictionary<string, int>(allStates);
+        this.action = action;
+    }
+
+    public Node(Node parent, float cost, Dictionary<string, int> allStates, Dictionary<string, int> beliefStates, Action action)
+    {
+        this.parent = parent;
+        this.cost = cost;
+        this.state = new Dictionary<string, int>(allStates);
+        this.action = action;
+
+        foreach (KeyValuePair<string, int> b in beliefStates)
         {
-            case UnitTeam.ATTACK:
-                Team = UnitTeam.ATTACK;
-                ai = new AIAttack(Tile);
+            if (!this.state.ContainsKey(b.Key))
+            {
+                this.state.Add(b.Key, b.Value);
+            }
+        }
+
+    }
+}
+
+public class Planner
+{
+    public Queue<Action> Plan(List<Action> actions, Dictionary<string, int> goal, WorldStates beliefStates)
+    {
+        List<Action> usableActions = new List<Action>();
+
+        foreach (Action action in actions)
+        {
+            if (action.IsAchievable())
+            {
+                usableActions.Add(action);
+            }
+        }
+
+        List<Node> leaves = new List<Node>();
+        Node start = new Node(null, 0, World.Instance.GetWorldStates().States, null);
+
+        bool success = BuildGraph(start, leaves, usableActions, goal);
+
+        if (!success)
+        {
+            return null;
+        }
+
+        Node cheapest = null;
+
+        foreach (Node leaf in leaves)
+        {
+            if (cheapest == null)
+            {
+                cheapest = leaf;
+            }
+            else
+            {
+                if (leaf.cost < cheapest.cost)
+                {
+                    cheapest = leaf;
+                }
+            }
+        }
+
+        List<Action> result = new List<Action>();
+
+        Node n = cheapest;
+
+        while (n != null)
+        {
+            if (n.action != null)
+            {
+                result.Insert(0, n.action);
+            }
+            n = n.parent;
+        }
+
+        Queue<Action> queue = new Queue<Action>();
+
+        foreach (Action a in result)
+        {
+            queue.Enqueue(a);
+        }
+
+        return queue;
+    }
+
+    bool BuildGraph(Node parent, List<Node> leaves, List<Action> usableActions, Dictionary<string, int> goal)
+    {
+        bool foundPath = false;
+
+        foreach (Action action in usableActions)
+        {
+            //Logger.LogDebugMessage("Checking action " + action.actionName);
+            if (action.IsAchievableGiven(parent.state))
+            {
+                //Logger.LogDebugMessage("it is achievable!");
+
+                Dictionary<string, int> currentState = new Dictionary<string, int>(parent.state);
+
+                foreach (KeyValuePair<string, int> effect in action.afterEffects.States)
+                {
+                    if (!currentState.ContainsKey(effect.Key))
+                    {
+                        currentState.Add(effect.Key, effect.Value);
+                    }
+                }
+
+                Node node = new Node(parent, parent.cost + action.cost, currentState, action);
+
+                if (GoalAchieved(goal, currentState))
+                {
+                    leaves.Add(node);
+                    foundPath = true;
+                }
+                else
+                {
+                    List<Action> subset = ActionSubset(usableActions, action);
+                    bool found = BuildGraph(node, leaves, subset, goal);
+
+                    if (found)
+                    {
+                        foundPath = true;
+                    }
+                }
+            }
+        }
+        return foundPath;
+    }
+
+    List<Action> ActionSubset(List<Action> usableActions, Action removeMe)
+    {
+        List<Action> subset = new List<Action>();
+
+        foreach (Action a in usableActions)
+        {
+            if (!a.Equals(removeMe))
+            {
+                subset.Add(a);
+            }
+        }
+        return subset;
+    }
+
+    bool GoalAchieved(Dictionary<string, int> goal, Dictionary<string, int> currentState)
+    {
+        foreach (KeyValuePair<string, int> g in goal)
+        {
+            if (!currentState.ContainsKey(g.Key))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+#endregion
+
+#region Inventory
+
+public class Inventory
+{
+    List<GameObject> items = new List<GameObject>();
+
+    public void AddItem(GameObject i)
+    {
+        items.Add(i);
+    }
+
+    public GameObject FindItemWithTag(string tag)
+    {
+        foreach (GameObject i in items)
+        {
+            if (i.Tag == tag)
+            {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    public void RemoveItem(GameObject i)
+    {
+        int index = -1;
+
+        foreach (GameObject item in items)
+        {
+            index++;
+            if (item == i)
+            {
                 break;
-            case UnitTeam.DEFENSE:
-                Team = UnitTeam.DEFENSE;
-                ai = new AIDefense(Tile);
-                break;
-            case UnitTeam.BASE:
-                Team = UnitTeam.BASE;
-                ai = new AIBase(Tile);
-                break;
+            }
+        }
+
+        if (index >= -1)
+        {
+            items.RemoveAt(index);
         }
     }
+}
 
-    public string GetAction()
+#endregion
+
+#endregion
+
+#region Actions
+
+#region Action
+
+public abstract class Action
+{
+    public string actionName = "Action";
+    public float cost = 1.0f;
+    public GameObject target;
+    public string targetTag;
+    public float duration = 0f;
+    public WorldStates preConditions;
+    public WorldStates afterEffects;
+    public WorldStates agentBeliefs;
+
+    public bool running = false;
+
+    public Action(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs)
     {
-        return ai.GetAction();
+        this.target = target;
+        this.targetTag = targetTag;
+        this.preConditions = preConditions;
+        this.afterEffects = afterEffects;
+        this.agentBeliefs = agentBeliefs;
+    }
+
+    public bool IsAchievable()
+    {
+        return true;
+    }
+
+    public bool IsAchievableGiven(Dictionary<string, int> conditions)
+    {
+        //Logger.LogDebugMessage("IsAchievableGiven: " + actionName);
+        foreach (var key in conditions)
+        {
+            //Logger.LogDebugMessage("IsAchievableGiven: param key " + key);
+        }
+        foreach (var key in preConditions.States)
+        {
+            //Logger.LogDebugMessage("IsAchievableGiven: preConditions key " + key);
+        }
+
+        foreach (KeyValuePair<string, int> p in preConditions.States)
+        {
+            if (!conditions.ContainsKey(p.Key))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    public abstract bool PrePerform();
+    public abstract bool PostPerform();
+    public abstract string GetCommand(Tile agentTile, int value);
+}
+
+#endregion
+
+#region AttackEnemy
+
+public class AttackEnemy : Action
+{
+    int power;
+    public AttackEnemy(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs, int power)
+        : base(target, targetTag, preConditions, afterEffects, agentBeliefs)
+    {
+        actionName = "AttackEnemy";
+        this.power = power;
+    }
+
+    public override bool PrePerform()
+    {
+        target = World.Instance.GetQueue("enemyTankTiles").RemoveResource();
+        if (target == null)
+        {
+            Logger.LogDebugMessage("No more enemy target available");
+            return false;
+        }
+
+        if (power < ((EnemyTankTile)target).Strength)
+        {
+            Logger.LogDebugMessage("Enemy too strong! My power: " + power + ", Enemy power: " + ((EnemyTankTile)target).Strength + " at " + target.Tile);
+
+            World.Instance.GetQueue("enemyTankTiles").AddResource(target);
+            target = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    public override bool PostPerform()
+    {
+        World.Instance.GetWorldStates().ModifyState("EnemyTankTiles", -1);
+        return true;
+    }
+
+    public override string GetCommand(Tile agentTile, int value)
+    {
+        if (target == null)
+        {
+            return "";
+        }
+        else
+        {
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+        }
+    }
+}
+
+#endregion
+
+#region MoveToEnemyTile
+
+public class MoveToEnemyTile : Action
+{
+    public MoveToEnemyTile(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs)
+        : base(target, targetTag, preConditions, afterEffects, agentBeliefs)
+    {
+        actionName = "MoveToEnemyTile";
+    }
+
+    public override bool PrePerform()
+    {
+        target = World.Instance.GetQueue("enemyTiles").RemoveResource();
+        if (target == null)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public override bool PostPerform()
+    {
+        World.Instance.GetWorldStates().ModifyState("EnemyTiles", -1);
+        return true;
+    }
+
+    public override string GetCommand(Tile agentTile, int value)
+    {
+        if (target == null)
+        {
+            return "";
+        }
+        else
+        {
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+        }
+    }
+}
+
+#endregion
+
+#region MoveToScrapTile
+
+public class MoveToScrapTile : Action
+{
+    public MoveToScrapTile(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs)
+        : base(target, targetTag, preConditions, afterEffects, agentBeliefs)
+    {
+        actionName = "MoveToScrapTile";
+    }
+
+    public override bool PrePerform()
+    {
+        target = World.Instance.GetQueue("scrapTiles").RemoveResource();
+        if (target == null)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    public override bool PostPerform()
+    {
+        World.Instance.GetWorldStates().ModifyState("ScrapTiles", -1);
+        return true;
+    }
+
+    public override string GetCommand(Tile agentTile, int value)
+    {
+        if (target == null)
+        {
+            return "";
+        }
+        else
+        {
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+        }
+    }
+}
+
+#endregion
+
+#region SpawnRecycler
+
+public class SpawnRecycler : Action
+{
+    public SpawnRecycler(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs)
+        : base(target, targetTag, preConditions, afterEffects, agentBeliefs)
+    {
+        actionName = "SpawnRecycler";
+    }
+
+    public override bool PrePerform()
+    {
+        var matter = World.Instance.GetWorldStates().GetState("matter");
+        if (matter >= 10)
+        {
+            target = World.Instance.GetQueue("recyclerSpawnPoints").RemoveResource();
+            if (target == null)
+            {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public override bool PostPerform()
+    {
+        World.Instance.GetWorldStates().ModifyState("matter", -10);
+        World.Instance.GetWorldStates().ModifyState("RecyclerSpawnPoints", -1);
+        return true;
+    }
+
+    public override string GetCommand(Tile agentTile, int value)
+    {
+        if (target == null)
+        {
+            return "";
+        }
+        else
+        {
+            return "BUILD " + target.Tile.X + " " + target.Tile.Y;
+        }
+    }
+}
+
+#endregion
+
+#region SpawnTank
+
+public class SpawnTank : Action
+{
+    int qty;
+    public SpawnTank(GameObject target, string targetTag, WorldStates preConditions, WorldStates afterEffects, WorldStates agentBeliefs, int qty)
+        : base(target, targetTag, preConditions, afterEffects, agentBeliefs)
+    {
+        actionName = "SpawnTank";
+        this.qty = qty;
+    }
+
+    public override bool PrePerform()
+    {
+        var matter = World.Instance.GetWorldStates().GetState("matter");
+        if (matter >= 10*qty)
+        {
+            target = World.Instance.GetQueue("tankSpawnPoints").RemoveResource();
+            if (target == null)
+            {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public override bool PostPerform()
+    {
+        World.Instance.GetWorldStates().ModifyState("matter", -10*qty);
+        World.Instance.GetWorldStates().ModifyState("TankSpawnPoints", -1);
+
+        return true;
+    }
+
+    public override string GetCommand(Tile agentTile, int value)
+    {
+        if (target == null)
+        {
+            return "";
+        }
+        else
+        {
+            return "SPAWN " + qty + " " + target.Tile.X + " " + target.Tile.Y;
+        }
+    }
+}
+
+#endregion
+
+#endregion
+
+#region Agents
+
+#region Agent
+
+public class SubGoal
+{
+    public Dictionary<string, int> sgoals;
+    public bool remove;
+
+    public SubGoal(string s, int i, bool r)
+    {
+        sgoals = new Dictionary<string, int>();
+        sgoals.Add(s, i);
+        remove = r;
     }
 
     public override string ToString()
     {
-        return "I am a member of " + Team + " located at [" + Tile.X + "," + Tile.Y + "], in " + Camp + " Camp!";
+        return "Goal: " + sgoals.First().Key;
     }
 }
 
-/**
- * Keeps track of the spawn orders from the teams and prioritize them per team in case there isn't enough matter
- */
-public class UnitManager
+public class Agent : GameObject
 {
-    public List<Unit> Units { get; private set; }
-    Dictionary<Tile, int> AttackTeamSpawnRequests;
-    Dictionary<Tile, int> DefenseTeamSpawnRequests;
-    Dictionary<Tile, int> BaseTeamSpawnRequests;
-    Logger logger = Logger.Instance;
+    public List<Action> actions = new List<Action>();
+    public Dictionary<SubGoal, int> goals = new Dictionary<SubGoal, int>();
+    public WorldStates beliefs = new WorldStates();
 
-    public UnitManager()
+    Planner planner;
+    Queue<Action> actionQueue;
+    public Action currentAction;
+    SubGoal currentGoal;
+
+    protected int ValueForCommand = 0;
+
+    public Agent(List<Action> actions, Tile tile) : base(tile)
     {
-        AttackTeamSpawnRequests = new Dictionary<Tile, int>();
-        DefenseTeamSpawnRequests = new Dictionary<Tile, int>();
-        BaseTeamSpawnRequests = new Dictionary<Tile, int>();
-        Units = new List<Unit>();
+        this.actions = new List<Action>(actions);
     }
 
-    public void ResetForNewTurn()
+    public void Execute()
     {
-        AttackTeamSpawnRequests.Clear();
-        DefenseTeamSpawnRequests.Clear();
-        BaseTeamSpawnRequests.Clear();
-        Units.Clear();
-    }
-
-    public void CreateUnits(Tile tile, int unitCount)
-    {
-        for (var i = 0; i < unitCount; i++)
+        //Logger.LogDebugMessage("Executing for " + Tag + " on tile " + Tile);
+        if (planner == null || actionQueue == null)
         {
-            Units.Add(new Unit(tile));
-        }
-    }
+            planner = new Planner();
 
-    public void RequestSpawn(UnitTeam team, Tile tile, int unitCount)
-    {
-        switch(team)
-        {
-            case UnitTeam.ATTACK:
-                AttackTeamSpawnRequests.TryAdd(tile, unitCount);
-                break;
-            case UnitTeam.DEFENSE:
-                DefenseTeamSpawnRequests.TryAdd(tile, unitCount);
-                break;
-            case UnitTeam.BASE:
-                BaseTeamSpawnRequests.TryAdd(tile, unitCount);
-                break;
+            var sortedGoals = goals.OrderByDescending(e => e.Value).Select(e => e.Key);
 
-        }
-    }
-
-    public void SpawnUnits()
-    {
-        SpawnTeamRequests(DefenseTeamSpawnRequests);
-        SpawnTeamRequests(AttackTeamSpawnRequests);
-        SpawnTeamRequests(BaseTeamSpawnRequests);
-    }
-
-    void SpawnTeamRequests(Dictionary<Tile, int> teamRequests)
-    {
-        foreach (var unitsToSpawn in teamRequests)
-        {
-            logger.LogAction(Action.Spawn(unitsToSpawn.Value, unitsToSpawn.Key.X, unitsToSpawn.Key.Y));
-            GameInstance.Instance.MyMatter -= unitsToSpawn.Value * Constants.SCRAP_TO_BUILLD_OR_SPAWN;
-        }
-    }
-}
-
-public class TeamsManager
-{
-    public AttackTeam AttackTeam { get; private set; }
-    public DefenseTeam DefenseTeam { get; private set; }
-    public BaseTeam BaseTeam { get; private set; }
-
-    public TeamsManager()
-    {
-        AttackTeam = new AttackTeam();
-        DefenseTeam = new DefenseTeam();
-        BaseTeam = new BaseTeam();
-    }
-
-    public void ResetForNewTurn()
-    {
-        AttackTeam.ResetTeamForNewTurn();
-        DefenseTeam.ResetTeamForNewTurn();
-        BaseTeam.ResetTeamForNewTurn();
-    }
-
-    public void AssignMembersToTeams(List<Unit> units)
-    {
-        if (units.Count == 0)
-        {
-            var tileToSpawnTo = GameInstance.Instance.SpawnableTiles.FirstOrDefault();
-            var qty = GameInstance.Instance.MyMatter / Constants.SCRAP_TO_BUILLD_OR_SPAWN;
-            GameInstance.Instance.UnitManager.RequestSpawn(UnitTeam.DEFENSE, tileToSpawnTo, qty);
-            GameInstance.Instance.UnitManager.CreateUnits(tileToSpawnTo, qty);
-        }
-
-        //TODO here is complex logic
-        var baseUnits = GameInstance.Instance.MyCampPosition == CampPosition.LEFT ? units.OrderBy(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS) : units.OrderByDescending(t => t.Tile.X).Take(Constants.BASE_TEAM_UNITS);
-        var attackUnit = GameInstance.Instance.MyCampPosition == CampPosition.RIGHT ? units.OrderBy(t => t.Tile.X).First() : units.OrderByDescending(t => t.Tile.X).First();
-
-        //AttackTeam.AddNewMember(attackUnit);
-        //units.Remove(attackUnit);
-
-        foreach (var baseUnit in baseUnits)
-        { 
-            BaseTeam.AddNewMember(baseUnit);
-            units.Remove(baseUnit);
-        }
-        
-        foreach (var unit in units)
-        {
-            DefenseTeam.AddNewMember(unit);
-        }
-    }
-
-    public void ManageTeamsActions()
-    {
-        MoveTeams();
-    }
-
-    void MoveTeams()
-    {
-        AttackTeam.MoveMembers();
-        DefenseTeam.MoveMembers();
-        BaseTeam.MoveMembers();
-    }
-}
-
-public abstract class Team
-{
-    public List<Unit> Members { get; protected set; }
-    protected UnitTeam TeamType;
-    protected GameInstance gameInstance = GameInstance.Instance;
-    Logger logger = Logger.Instance;
-
-    public virtual void ResetTeamForNewTurn()
-    {
-        Members.Clear();
-    }
-
-    public virtual void AddNewMember(Unit unit)
-    {
-        Members.Add(unit);
-        unit.AssignTeam(TeamType);
-    }
-
-    public void MoveMembers()
-    {
-        foreach (var unit in Members)
-        {
-            logger.LogAction(unit.GetAction());
-        }
-    }
-}
-
-public class AttackTeam : Team
-{
-    public SortedList<Tile, Tile> EnemyTiles { get; private set; }
-
-    public AttackTeam()
-    {
-        Members = new List<Unit>();
-        TeamType = UnitTeam.ATTACK;
-
-        if (gameInstance.MyCampPosition == CampPosition.LEFT)
-        {
-            EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
-        }
-        else
-        {
-            EnemyTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
-        }
-    }
-
-    public override void ResetTeamForNewTurn()
-    {
-        base.ResetTeamForNewTurn();
-
-        EnemyTiles.Clear();
-    }
-
-    public void AddEnemyTile(Tile enemyTile)
-    {
-        EnemyTiles.Add(enemyTile, null);
-    }
-}
-
-public class DefenseTeam : Team
-{
-    public Tile TopUnitTile { get; private set; }
-    public Tile BottomUnitTile { get; private set; }
-    public int DefenseLine { get; private set; }
-    public bool HasTeamArrived => hasTeamArrived;
-    bool hasTeamArrived = false;
-    int unitsOnDefenseLine = 0;
-
-    public DefenseTeam()
-    {
-        Members = new List<Unit>();
-        TeamType = UnitTeam.DEFENSE;
-        DefenseLine = gameInstance.MapWidth / 2;
-    }
-
-    public override void ResetTeamForNewTurn()
-    {
-        base.ResetTeamForNewTurn();
-
-        TopUnitTile = null;
-        BottomUnitTile = null;
-        unitsOnDefenseLine = 0;
-    }
-
-    public override void AddNewMember(Unit unit)
-    {
-        base.AddNewMember(unit);
-
-        var tile = unit.Tile;
-        if (TopUnitTile == null || TopUnitTile.Y > tile.Y)
-        {
-            TopUnitTile = tile;
-        }
-        if (BottomUnitTile == null || BottomUnitTile.Y < tile.Y)
-        {
-            BottomUnitTile = tile;
-        }
-
-        if (tile.X == DefenseLine)
-        {
-            unitsOnDefenseLine++;
-
-            if (unitsOnDefenseLine >= 2)
+            foreach (SubGoal sg in sortedGoals)
             {
-                hasTeamArrived = true;
-            }
-        }
-    }
-}
+                Logger.LogDebugMessage(Tile + "Planning for " + sg);
 
-public class BaseTeam : Team
-{
-    public BaseTeam()
-    {
-        Members = new List<Unit>();
-        TeamType = UnitTeam.BASE;
-    }
-}
+                actionQueue = planner.Plan(actions, sg.sgoals, beliefs);
+                if (actionQueue != null)
+                {
+                    Logger.LogDebugMessage("Queue built!");
 
-public class RecyclerFactory
-{
-    List<Tile> recyclers;
-    SortedList<Tile, Tile> buildableTiles;
-    Logger logger = Logger.Instance;
-    GameInstance gameInstance = GameInstance.Instance;
-
-    public RecyclerFactory()
-    {
-        recyclers = new List<Tile>();
-        if (gameInstance.MyCampPosition == CampPosition.LEFT)
-        {
-            buildableTiles = new SortedList<Tile, Tile>(new SortTileFromLeftToRight());
-        }
-        else
-        {
-            buildableTiles = new SortedList<Tile, Tile>(new SortTileFromRightToLeft());
-        }
-    }
-
-    public void ResetForNewTurn()
-    {
-        recyclers.Clear();
-        buildableTiles.Clear();
-    }
-
-    public void AddRecycler(Tile recycler)
-    {
-        recyclers.Add(recycler);
-    }
-
-    public void AddBuildableTile(Tile buildableTile)
-    {
-        buildableTiles.Add(buildableTile, null);
-    }
-
-    /**
-     * We build a recycler if we have enough matter, we did not reach our quota of recyclers, and we can find a suitable place
-     */
-    public void BuildRecyclersIfNeeded()
-    {
-        //if (recyclers.Count < Constants.IDEAL_RECYCLERS 
-        //    && gameInstance.MyMatter > Constants.MIN_MATTER_TO_BUILD)
-        {
-            var suitableTiles = FindSuitableTiles();
-
-            foreach (var suitableTile in suitableTiles)
-            {
-                logger.LogAction(Action.Build(suitableTile.X, suitableTile.Y));
-                gameInstance.MyMatter -= Constants.SCRAP_TO_BUILLD_OR_SPAWN;
-            }
-        }
-    }
-
-    /**
-     * A tile is suitable to build if it is not too close from another recycler and it has enough scrappable matter
-     */
-    IEnumerable<Tile> FindSuitableTiles()
-    {
-        foreach (var tile in buildableTiles.Keys)
-        {
-            //if (tile.TotalScrappableAmount > Constants.MIN_SCRAPPABLE_TO_BUILD
-            //    && !IsCloseToRecycler(tile))
-            if ((tile.X >= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.MyCampPosition == CampPosition.LEFT)
-                || (tile.X <= gameInstance.TeamsManager.DefenseTeam.DefenseLine && gameInstance.MyCampPosition == CampPosition.RIGHT))
-            {
-                yield return tile;
-            }
-        }
-    }
-
-
-    /**
-     * If we are within range of another of our recyclers, then it is too close
-     */
-    bool IsCloseToRecycler(Tile tile)
-    {
-        foreach (var recycler in recyclers)
-        {
-            if ((tile.X == recycler.X && Math.Abs(tile.Y - recycler.Y) <= 2)
-                || (tile.Y == recycler.Y && Math.Abs(tile.X - recycler.X) <= 2)
-                || (Math.Abs(tile.X - recycler.X) <= 1 && Math.Abs(tile.Y - recycler.Y) <= 1))
-            {
-                return true;
+                    currentGoal = sg;
+                    break;
+                }
             }
         }
 
-        return false;
+        if (actionQueue != null && actionQueue.Count == 0)
+        {
+            //Logger.LogDebugMessage("Planner is not null");
+
+            if (currentGoal.remove)
+            {
+                goals.Remove(currentGoal);
+            }
+            planner = null;
+        }
+
+        if (actionQueue != null && actionQueue.Count > 0)
+        {
+            //Logger.LogDebugMessage("Planner is not null");
+
+            currentAction = actionQueue.Dequeue();
+
+            if (currentAction.PrePerform())
+            {
+                string cmd = currentAction.GetCommand(Tile, ValueForCommand);
+                Logger.LogDebugMessage("Logging Action: " + cmd);
+                Logger.Instance.LogAction(cmd);
+                currentAction.PostPerform();
+            }
+            else
+            {
+                actionQueue = null;
+            }
+        }
+        //Logger.LogDebugMessage("Leaving execute");
     }
 }
 
-public static class Action
+#endregion
+
+#region Tank
+
+public class Tank : Agent
 {
-    public static string Move(int amount, int fromX, int fromY, int toX, int toY)
+    public Tank(List<Action> actions, Tile tile, int strength) : base(actions, tile)
     {
-        return Constants.MOVE + " " + amount + " " + fromX + " " + fromY + " " + toX + " " + toY;
-    }
+        SubGoal s1 = new SubGoal("targetEliminated", 1, false);
+        SubGoal s2 = new SubGoal("tileConquered", 1, false);
 
-    public static string Build(int x, int y)
-    {
-        return Constants.BUILD + " " + x + " " + y;
-    }
-
-    public static string Spawn(int amount, int x, int y)
-    {
-        return Constants.SPAWN + " " + amount + " " + x + " " + y;
-    }
-
-    public static string Wait()
-    {
-        return Constants.WAIT;
+        goals.Add(s1, 2);
+        goals.Add(s2, 1);
+        ValueForCommand = strength;
+        Tag = "Tank";
     }
 }
+
+#endregion
+
+#region Spawner
+
+public class Spawner : Agent
+{
+    public Spawner(List<Action> actions, Tile tile) : base(actions, tile)
+    {
+        SubGoal s1 = new SubGoal("recyclerSpawned", 1, false);
+        SubGoal s2 = new SubGoal("tankSpawned", 1, false);
+
+        goals.Add(s1, 2);
+        goals.Add(s2, 1);
+        ValueForCommand = 1;
+        Tag = "Spawner";
+    }
+}
+
+#endregion
+
+#endregion
+
+#region Resources
+
+#region GameObject
+
+public class GameObject
+{
+    public Tile Tile;
+    public GameObject(Tile tile)
+    {
+        Tile = tile;
+    }
+    public string Tag;
+}
+
+#endregion
+
+#region Recycler
+
+public class Recycler : GameObject
+{
+    public Recycler(Tile tile) : base(tile)
+    {
+        Tag = "Recycler";
+    }
+}
+
+#endregion
+
+#region EnemyTankTile
+
+public class EnemyTankTile : GameObject
+{
+    public int Strength;
+    public EnemyTankTile(Tile tile, int strength) : base(tile)
+    {
+        Tag = "EnemyTankTile";
+        this.Strength = strength;
+    }
+}
+
+#endregion
+
+#region EnemyTile
+
+public class EnemyTile : GameObject
+{
+    public EnemyTile(Tile tile) : base(tile)
+    {
+        Tag = "EnemyTile";
+    }
+}
+
+#endregion
+
+#region ScrapTile
+
+public class ScrapTile : GameObject
+{
+    public int Scrap;
+    public ScrapTile(Tile tile, int scrap) : base(tile)
+    {
+        Tag = "ScrapTile";
+        Scrap = scrap;
+    }
+}
+
+#endregion
+
+#region Tile
+
+public class Tile
+{
+    public Tile(int x, int y)
+    {
+        X = x;
+        Y = y;
+    }
+
+    public int X;
+    public int Y;
+
+    public override string ToString()
+    {
+        return X + " " + Y;
+    }
+}
+
+#endregion
+
+#endregion
+
+#region Helper
+
+public static class Helper
+{
+    public static Spawner InitRecyclerSpawner()
+    {
+        var preConditionsSR = new WorldStates();
+        preConditionsSR.SetState("shouldSpawnRecycler", 1);
+        var afterEffectsSR = new WorldStates();
+        afterEffectsSR.SetState("recyclerSpawned", 1);
+
+        var spawnRecyclerAction = new SpawnRecycler(null, "", preConditionsSR, afterEffectsSR, null);
+
+        return new Spawner(new List<Action> { spawnRecyclerAction }, new Tile(0, 0));
+    }
+
+    public static Spawner InitTankSpawner(int qty)
+    {
+        var preConditionsST = new WorldStates();
+        preConditionsST.SetState("shouldSpawnTank", 1);
+        var afterEffectsST = new WorldStates();
+        afterEffectsST.SetState("tankSpawned", 1);
+
+        var spawnTankAction = new SpawnTank(null, "", preConditionsST, afterEffectsST, null, qty);
+
+        return new Spawner(new List<Action> { spawnTankAction }, new Tile(0, 0));
+    }
+
+    public static Tank InitTank(int strength, Tile tile)
+    {
+        var preConditionsA = new WorldStates();
+        preConditionsA.SetState("EnemyTankTiles", 1);
+        var afterEffectsA = new WorldStates();
+        afterEffectsA.SetState("targetEliminated", 1);
+
+        var attackEnemyTileAction = new AttackEnemy(null, "", preConditionsA, afterEffectsA, null, strength);
+
+        var preConditionsET = new WorldStates();
+        //preConditionsET.SetState("shouldSpawnTank", 1);
+        var afterEffectsET = new WorldStates();
+        afterEffectsET.SetState("tileConquered", 1);
+
+        var moveToEnemyTileAction = new MoveToEnemyTile(null, "", preConditionsET, afterEffectsET, null);
+
+        var preConditionsST = new WorldStates();
+        //preConditionsST.SetState("shouldSpawnTank", 1);
+        var afterEffectsST = new WorldStates();
+        afterEffectsST.SetState("tileConquered", 1);
+
+        var moveToScrapTileAction = new MoveToScrapTile(null, "", preConditionsST, afterEffectsST, null);
+
+        return new Tank(new List<Action> { attackEnemyTileAction, moveToEnemyTileAction, moveToScrapTileAction }, tile, strength);
+    }
+
+    public static void NewTurnCleanUp(World worldInstance)
+    {
+        worldInstance.ClearQueue("recyclerSpawnPoints");
+        worldInstance.GetWorldStates().RemoveState("RecyclerSpawnPoints");
+        worldInstance.ClearQueue("tankSpawnPoints");
+        worldInstance.GetWorldStates().RemoveState("TankSpawnPoints");
+        worldInstance.ClearQueue("tanks");
+        worldInstance.GetWorldStates().RemoveState("Tanks");
+        worldInstance.ClearQueue("enemyTiles");
+        worldInstance.GetWorldStates().RemoveState("EnemyTiles");
+        worldInstance.ClearQueue("enemyTankTiles");
+        worldInstance.GetWorldStates().RemoveState("EnemyTankTiles");
+        worldInstance.ClearQueue("recyclers");
+        worldInstance.GetWorldStates().RemoveState("Recyclers");
+        worldInstance.ClearQueue("scrapTiles");
+        worldInstance.GetWorldStates().RemoveState("ScrapTiles");
+
+    }
+}
+
+#endregion
+
+#region Logger
 
 public sealed class Logger
 {
@@ -871,168 +1175,28 @@ public sealed class Logger
         }
         else
         {
-            Console.WriteLine(Action.Wait());
+            Console.WriteLine("WAIT;");
         }
         Output.Clear();
     }
 
+    public static void LogWorldStates()
+    {
+        foreach (var state in World.Instance.GetWorldStates().States)
+        {
+            Console.Error.WriteLine("State: " + state.Key + " " + state.Value);
+        }
+    }
+
+    public static void PrintQueue(string type)
+    {
+        Console.Error.WriteLine("Queue: " + type);
+        foreach (var gobj in World.Instance.GetQueue(type).que)
+        {
+            Console.Error.WriteLine("Tile: " + gobj.Tile + ", tag: " + gobj.Tag);
+        }
+    }
+
 }
 
-public class Tile
-{
-    public Tile(int x, int y, int scrapAmount, int owner, int units, bool recycler, bool canBuild, bool canSpawn, bool inRangeOfRecycler)
-    {
-        X = x;
-        Y = y;
-        ScrapAmount = scrapAmount;
-        Owner = owner;
-        Units = units;
-        Recycler = recycler;
-        CanBuild = canBuild;
-        CanSpawn = canSpawn;
-        InRangeOfRecycler = inRangeOfRecycler;
-    }
-
-    public int X { get; }
-    public int Y { get; }
-    public int ScrapAmount { get; }
-    public int Owner { get; }
-    public int Units { get; }
-    public bool Recycler { get; }
-    public bool CanBuild { get; }
-    public bool CanSpawn { get; }
-    public bool InRangeOfRecycler { get; }
-    GameInstance gameInstance = GameInstance.Instance;
-    Tile[,] map = GameInstance.Instance.Map;
-
-    public CampPosition Camp 
-    {
-        get
-        {
-            if (!camp.HasValue)
-            {
-                camp = Helper.GetCampForTile(gameInstance, X);
-            }
-            return camp.Value;
-        }
-    }
-    CampPosition? camp;
-
-    public int TotalScrappableAmount
-    {
-        get
-        {
-            if (fTotalScrappableAmount == 0)
-            {
-                if (X < gameInstance.MapWidth - 1)
-                {
-                    fTotalScrappableAmount += map[X + 1, Y]?.ScrapAmount ?? 0;
-                }
-                if (X > 0)
-                {
-                    fTotalScrappableAmount += map[X - 1, Y]?.ScrapAmount ?? 0;
-                }
-                if (Y < gameInstance.MapHeight - 1)
-                {
-                    fTotalScrappableAmount += map[X, Y + 1]?.ScrapAmount ?? 0;
-                }
-                if (Y > 0)
-                {
-                    fTotalScrappableAmount += map[X, Y - 1]?.ScrapAmount ?? 0;
-                }
-
-                fTotalScrappableAmount += ScrapAmount;
-            }
-            return fTotalScrappableAmount;
-        }
-    }
-    int fTotalScrappableAmount = 0;
-
-    public override bool Equals(Object obj)
-    {
-        Tile tile = obj as Tile;
-        if (tile == null)
-        {
-            return false;
-        }
-        else
-        {
-            return X == tile.X && Y == tile.Y;
-        }
-    }
-
-   public override int GetHashCode()
-   {
-      return this.X.GetHashCode() + this.Y.GetHashCode();
-   }
-
-    public override string ToString()
-    {
-        return "x: " + X + ", y:" + Y;
-    }
-}
-
-class SortTileFromLeftToRight : IComparer<Tile>
-{
-    int IComparer<Tile>.Compare(Tile a, Tile b)
-    {
-        var t1 = (Tile)a;
-        var t2 = (Tile)b;
-        if (t1.X > t2.X)
-        {
-            return 1;
-        }
-        if (t1.X < t2.X)
-        {
-            return -1;
-        }
-        else
-        {
-
-            if (t1.Y > t2.Y)
-            {
-                return 1;
-            }
-            if (t1.Y < t2.Y)
-            {
-                return -1;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-    }
-}
-
-class SortTileFromRightToLeft : IComparer<Tile>
-{
-    int IComparer<Tile>.Compare(Tile a, Tile b)
-    {
-        var t1 = (Tile)a;
-        var t2 = (Tile)b;
-        if (t1.X < t2.X)
-        {
-            return 1;
-        }
-        if (t1.X > t2.X)
-        {
-            return -1;
-        }
-        else
-        {
-            if (t1.Y > t2.Y)
-            {
-                return 1;
-            }
-            if (t1.Y < t2.Y)
-            {
-                return -1;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-    }
-}
+#endregion
