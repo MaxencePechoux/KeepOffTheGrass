@@ -21,7 +21,6 @@ class Player
         worldInstance.MapHeight = int.Parse(inputs[1]);
 
         worldInstance.GetWorldStates().SetState("shouldSpawnTank", 1);
-        var tankList = new List<Tile>();
 
         //temp hack
         int init = 0;
@@ -29,6 +28,7 @@ class Player
         // game loop
         while (true)
         {
+            var tankList = new List<Tile>();
             worldInstance.Map = new Tile[worldInstance.MapWidth, worldInstance.MapHeight];
             inputs = Console.ReadLine().Split(' ');
             Helper.NewTurnCleanUp(worldInstance);
@@ -70,14 +70,16 @@ class Player
                             var tank = worldInstance.GetList("tanks").GetResource(tile) as Tank;
                             if (tank != null)
                             {
+                                //Logger.LogDebugMessage("Found tank " + tile);
                                 tank.ValueForCommand = units;
                             }
                             else
                             {
-                                tankList.Add(tile);
+                                //Logger.LogDebugMessage("Didn't find tank " + tile);
                                 worldInstance.GetList("tanks").AddResource(Helper.InitTank(units, tile));
                                 worldInstance.GetWorldStates().ModifyState("Tanks", 1);
                             }
+                            tankList.Add(tile);
                         }
 
                         if (recycler)
@@ -128,6 +130,8 @@ class Player
             }
 
             Helper.ReconciliateTanks(tankList);
+
+            //Logger.PrintReconciledTankList();
 
             // Write an action using Console.WriteLine()
             // To debug: Console.Error.WriteLine("Debug messages...");
@@ -622,7 +626,7 @@ public abstract class Action
 
     public abstract bool PrePerform();
     public abstract bool PostPerform();
-    public abstract string GetCommand(Tile agentTile, int value);
+    public abstract string GetCommand(Tile agentTile, Tile targetTile, int value);
 }
 
 #endregion
@@ -666,7 +670,7 @@ public class AttackEnemy : Action
         return true;
     }
 
-    public override string GetCommand(Tile agentTile, int value)
+    public override string GetCommand(Tile agentTile, Tile targetTile, int value)
     {
         if (target == null)
         {
@@ -674,7 +678,7 @@ public class AttackEnemy : Action
         }
         else
         {
-            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + targetTile.X + " " + targetTile.Y;
         }
     }
 }
@@ -707,7 +711,7 @@ public class MoveToEnemyTile : Action
         return true;
     }
 
-    public override string GetCommand(Tile agentTile, int value)
+    public override string GetCommand(Tile agentTile, Tile targetTile, int value)
     {
         if (target == null)
         {
@@ -715,7 +719,7 @@ public class MoveToEnemyTile : Action
         }
         else
         {
-            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + targetTile.X + " " + targetTile.Y;
         }
     }
 }
@@ -748,7 +752,7 @@ public class MoveToScrapTile : Action
         return true;
     }
 
-    public override string GetCommand(Tile agentTile, int value)
+    public override string GetCommand(Tile agentTile, Tile targetTile, int value)
     {
         if (target == null)
         {
@@ -756,7 +760,7 @@ public class MoveToScrapTile : Action
         }
         else
         {
-            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + target.Tile.X + " " + target.Tile.Y;
+            return "MOVE " + value + " " + agentTile.X + " " + agentTile.Y + " " + targetTile.X + " " + targetTile.Y;
         }
     }
 }
@@ -795,7 +799,7 @@ public class SpawnRecycler : Action
         return true;
     }
 
-    public override string GetCommand(Tile agentTile, int value)
+    public override string GetCommand(Tile agentTile, Tile targetTile, int value)
     {
         if (target == null)
         {
@@ -803,7 +807,7 @@ public class SpawnRecycler : Action
         }
         else
         {
-            return "BUILD " + target.Tile.X + " " + target.Tile.Y;
+            return "BUILD " + targetTile.X + " " + targetTile.Y;
         }
     }
 }
@@ -845,7 +849,7 @@ public class SpawnTank : Action
         return true;
     }
 
-    public override string GetCommand(Tile agentTile, int value)
+    public override string GetCommand(Tile agentTile, Tile targetTile, int value)
     {
         if (target == null)
         {
@@ -853,7 +857,7 @@ public class SpawnTank : Action
         }
         else
         {
-            return "SPAWN " + qty + " " + target.Tile.X + " " + target.Tile.Y;
+            return "SPAWN " + qty + " " + targetTile.X + " " + targetTile.Y;
         }
     }
 }
@@ -895,11 +899,20 @@ public class Agent : GameObject
     public Action currentAction;
     SubGoal currentGoal;
 
+    Tile destination;
+
     public int ValueForCommand = 0;
 
     public Agent(List<Action> actions, Tile tile) : base(tile)
     {
         this.actions = new List<Action>(actions);
+    }
+
+    void CompleteAction()
+    {
+        currentAction.running = false;
+        
+        currentAction.PostPerform();
     }
 
     public void Execute()
@@ -913,12 +926,12 @@ public class Agent : GameObject
 
             foreach (SubGoal sg in sortedGoals)
             {
-                Logger.LogDebugMessage(Tile + "Planning for " + sg);
+                //Logger.LogDebugMessage(Tile + "Planning for " + sg);
 
                 actionQueue = planner.Plan(actions, sg.sgoals, beliefs);
                 if (actionQueue != null)
                 {
-                    Logger.LogDebugMessage("Queue built!");
+                    //Logger.LogDebugMessage("Queue built!");
 
                     currentGoal = sg;
                     break;
@@ -945,17 +958,57 @@ public class Agent : GameObject
 
             if (currentAction.PrePerform())
             {
-                string cmd = currentAction.GetCommand(Tile, ValueForCommand);
-                Logger.LogDebugMessage("Logging Action: " + cmd);
-                Logger.Instance.LogAction(cmd);
-                currentAction.PostPerform();
+                if (currentAction.target != null)
+                {
+                    currentAction.running = true;
+
+                    destination = currentAction.target.Tile;
+                }
             }
             else
             {
+                goals.Remove(currentGoal);
                 actionQueue = null;
             }
         }
-        //Logger.LogDebugMessage("Leaving execute");
+
+        if (currentAction != null 
+            && currentAction.running 
+            && actionQueue != null
+            && destination != null)
+        {
+            if (Tile.Equals(destination))
+            {
+                CompleteAction();
+            }
+            else
+            {
+                Tile nextTile;
+                if (Tile.X == -1)
+                {
+                    nextTile = destination;
+                }
+                else
+                {
+                    nextTile = Helper.FindNextTileToTarget(World.Instance.Map, new Tile(Tile.X, Tile.Y), new Tile(destination.X, destination.Y));
+                    Logger.LogDebugMessage("For " + Tile + " the next tile is " + nextTile + " towards " + destination);
+                }
+
+                if (nextTile != null)
+                {
+                    string cmd = currentAction.GetCommand(Tile, nextTile, ValueForCommand);
+                    Logger.LogDebugMessage("Logging Action: " + cmd);
+                    Logger.Instance.LogAction(cmd);
+
+                    if (Tile.X != -1)
+                    {
+                        Tile = nextTile;
+                    }
+                }
+            }
+            return;
+        }
+
     }
 }
 
@@ -969,9 +1022,11 @@ public class Tank : Agent
     {
         SubGoal s1 = new SubGoal("targetEliminated", 1, false);
         SubGoal s2 = new SubGoal("tileConquered", 1, false);
+        SubGoal s3 = new SubGoal("tileConverted", 1, false);
 
-        goals.Add(s1, 2);
-        goals.Add(s2, 1);
+        goals.Add(s1, 3);
+        goals.Add(s2, 2);
+        goals.Add(s3, 1);
         ValueForCommand = strength;
         Tag = "Tank";
     }
@@ -1153,7 +1208,7 @@ public static class Helper
 
         var spawnRecyclerAction = new SpawnRecycler(null, "", preConditionsSR, afterEffectsSR, null);
 
-        return new Spawner(new List<Action> { spawnRecyclerAction }, new Tile(0, 0));
+        return new Spawner(new List<Action> { spawnRecyclerAction }, new Tile(-1, -1));
     }
 
     public static Spawner InitTankSpawner(int qty)
@@ -1165,7 +1220,7 @@ public static class Helper
 
         var spawnTankAction = new SpawnTank(null, "", preConditionsST, afterEffectsST, null, qty);
 
-        return new Spawner(new List<Action> { spawnTankAction }, new Tile(0, 0));
+        return new Spawner(new List<Action> { spawnTankAction }, new Tile(-1, -1));
     }
 
     public static Tank InitTank(int strength, Tile tile)
@@ -1187,7 +1242,7 @@ public static class Helper
         var preConditionsST = new WorldStates();
         //preConditionsST.SetState("shouldSpawnTank", 1);
         var afterEffectsST = new WorldStates();
-        afterEffectsST.SetState("tileConquered", 1);
+        afterEffectsST.SetState("tileConverted", 1);
 
         var moveToScrapTileAction = new MoveToScrapTile(null, "", preConditionsST, afterEffectsST, null);
 
@@ -1212,6 +1267,8 @@ public static class Helper
 
     static List<Tile> GetWalkableTiles(Tile[,] map, Tile currentTile, Tile targetTile)
     {
+        //Logger.LogDebugMessage("GetWalkableTiles : current " + currentTile);
+        //Logger.LogDebugMessage("GetWalkableTiles : target " + targetTile);
         var possibleTiles = new List<Tile>()
         {
             new Tile { X = currentTile.X, Y = currentTile.Y - 1, Parent = currentTile, Cost = currentTile.Cost + 1 },
@@ -1228,14 +1285,19 @@ public static class Helper
         return possibleTiles
                 .Where(tile => tile.X >= 0 && tile.X <= maxX)
                 .Where(tile => tile.Y >= 0 && tile.Y <= maxY)
-                .Where(tile => map[tile.Y,tile.X].IsAccessible)
+                .Where(tile => map[tile.X,tile.Y].IsAccessible)
                 .ToList();
     }
 
     public static Tile FindNextTileToTarget(Tile[,] map, Tile start, Tile finish)
     {
+        //Logger.LogDebugMessage("FindNextTileToTarget : start " + start);
+        //Logger.LogDebugMessage("FindNextTileToTarget : finish " + finish);
+        start.SetDistance(finish.X, finish.Y);
+
         var visitedTiles = new List<Tile>();
         var activeTiles = new List<Tile>();
+
         activeTiles.Add(start);
         while (activeTiles.Any())
         {
@@ -1243,9 +1305,13 @@ public static class Helper
 
             if (checkTile.X == finish.X && checkTile.Y == finish.Y)
             {
-                while (checkTile.Parent != null)
+                //Logger.LogDebugMessage("Path Found!");
+                var previousTile = checkTile.Parent;
+                while (previousTile.Parent != null)
                 {
-                    checkTile = checkTile.Parent;
+                    checkTile = previousTile;
+                    //Logger.LogDebugMessage("checkTile : " + checkTile);
+                    previousTile = previousTile.Parent;
                 }
                 return checkTile;
             }
@@ -1281,13 +1347,20 @@ public static class Helper
 
     public static void ReconciliateTanks(List<Tile> tankList)
     {
+        var tanksToRemove = new List<GameObject>();
         foreach (var tank in World.Instance.GetList("tanks").list)
         {
             if (!tankList.Contains(tank.Tile))
             {
+                Logger.LogDebugMessage(tank.Tile + " is no longer among us!");
+                tanksToRemove.Add(tank);
+            }
+        }
+
+        foreach (var tank in tanksToRemove)
+        {
                 World.Instance.GetList("tanks").RemoveResource(tank);
                 World.Instance.GetWorldStates().ModifyState("Tanks", -1);
-            }
         }
     }
 }
@@ -1362,6 +1435,15 @@ public sealed class Logger
         foreach (var gobj in World.Instance.GetList(type).list)
         {
             Console.Error.WriteLine("Tile: " + gobj.Tile + ", tag: " + gobj.Tag);
+        }
+    }
+
+    public static void PrintReconciledTankList()
+    {
+        Console.Error.WriteLine("TankList");
+        foreach (Tank tank in World.Instance.GetList("tanks").list)
+        {
+            Console.Error.WriteLine(tank.ValueForCommand + " tank(s) at " + tank.Tile);
         }
     }
 
