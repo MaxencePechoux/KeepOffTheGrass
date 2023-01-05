@@ -20,10 +20,7 @@ class Player
         worldInstance.MapWidth = int.Parse(inputs[0]);
         worldInstance.MapHeight = int.Parse(inputs[1]);
 
-        worldInstance.GetWorldStates().SetState("shouldSpawnTank", 1);
-
-        //temp hack
-        int init = 0;
+        worldInstance.GetWorldStates().SetState(Constants.STATE_SHOULD_SPAWN_TANK, 1);
 
         // game loop
         while (true)
@@ -32,7 +29,7 @@ class Player
             worldInstance.Map = new Tile[worldInstance.MapWidth, worldInstance.MapHeight];
             inputs = Console.ReadLine().Split(' ');
             Helper.NewTurnCleanUp(worldInstance);
-            worldInstance.GetWorldStates().SetState("matter", int.Parse(inputs[0]));
+            worldInstance.GetWorldStates().SetState(Constants.STATE_MATTER, int.Parse(inputs[0]));
             int oppMatter = int.Parse(inputs[1]);
             for (int i = 0; i < worldInstance.MapHeight; i++)
             {
@@ -55,44 +52,38 @@ class Player
                     {
                         if (canBuild)
                         {
-                            worldInstance.GetList("recyclerSpawnPoints").AddResource(new GameObject(tile));
-                            worldInstance.GetWorldStates().ModifyState("RecyclerSpawnPoints", 1);
+                            worldInstance.GetList(Constants.RES_RECYCLER_SPAWN_POINTS).AddResource(new GameObject(tile));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_RECYCLER_SPAWN_POINTS, 1);
                         }
 
                         if (canSpawn)
                         {
-                            worldInstance.GetList("tankSpawnPoints").AddResource(new GameObject(tile));
-                            worldInstance.GetWorldStates().ModifyState("TankSpawnPoints", 1);
+                            worldInstance.GetList(Constants.RES_TANK_SPAWN_POINTS).AddResource(new GameObject(tile));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_TANK_SPAWN_POINTS, 1);
                         }
 
                         if (units > 0)
                         {
-                            var tank = worldInstance.GetList("tanks").GetResource(tile) as Tank;
+                            var tank = worldInstance.GetList(Constants.RES_TANKS).GetResource(tile) as Tank;
                             if (tank != null)
                             {
-                                //Logger.LogDebugMessage("Found tank " + tile);
                                 tank.ValueForCommand = units;
                             }
                             else
                             {
-                                //Logger.LogDebugMessage("Didn't find tank " + tile);
-                                worldInstance.GetList("tanks").AddResource(Helper.InitTank(units, tile));
-                                worldInstance.GetWorldStates().ModifyState("Tanks", 1);
+                                worldInstance.GetList(Constants.RES_TANKS).AddResource(Helper.InitTank(units, tile));
+                                worldInstance.GetWorldStates().ModifyState(Constants.STATE_TANKS, 1);
                             }
                             tankList.Add(tile);
                         }
 
                         if (recycler)
                         {
-                            worldInstance.GetList("recyclers").AddResource(new Recycler(tile));
-                            worldInstance.GetWorldStates().ModifyState("Recyclers", 1);
+                            worldInstance.GetList(Constants.RES_RECYCLERS).AddResource(new Recycler(tile));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_RECYCLERS, 1);
                         }
 
-                        //temp hack
-                        if (init == 0)
-                        {
-                            init = j < World.Instance.MapWidth / 2 ? 1 : -1;
-                        }
+                        worldInstance.Map[j, i].ExtraCost = 1;
                     }
                     else if (owner == 0 && !recycler)
                     {
@@ -100,65 +91,50 @@ class Player
                         if (units > 0)
                         {
 
-                            worldInstance.GetList("enemyTankTiles").AddResource(new EnemyTankTile(tile, units));
-                            worldInstance.GetWorldStates().ModifyState("EnemyTankTiles", 1);
+                            worldInstance.GetList(Constants.RES_ENEMY_TANK_TILES).AddResource(new EnemyTankTile(tile, units));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_ENEMY_TANK_TILES, 1);
                         }
                         else
                         {
-                            worldInstance.GetList("enemyTiles").AddResource(new EnemyTile(tile));
-                            worldInstance.GetWorldStates().ModifyState("EnemyTiles", 1);
+                            worldInstance.GetList(Constants.RES_ENEMY_TILES).AddResource(new EnemyTile(tile));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_ENEMY_TILES, 1);
                         }
+
+                        worldInstance.Map[j, i].ExtraCost = -1;
                     }
                     else
                     {
                         if (scrapAmount > 0)
                         {
-                            worldInstance.GetList("scrapTiles").AddResource(new ScrapTile(tile, scrapAmount));
-                            worldInstance.GetWorldStates().ModifyState("ScrapTiles", 1);
+                            worldInstance.GetList(Constants.RES_SCRAP_TILES).AddResource(new ScrapTile(tile, scrapAmount));
+                            worldInstance.GetWorldStates().ModifyState(Constants.STATE_SCRAP_TILES, 1);
                         }
                     }
                 }
             }
 
-            if (worldInstance.GetWorldStates().GetState("Recyclers") < 3)
+            if (worldInstance.GetWorldStates().GetState(Constants.STATE_RECYCLERS) < 3)
             {
-                worldInstance.GetWorldStates().SetState("shouldSpawnRecycler", 1);
+                worldInstance.GetWorldStates().SetState(Constants.STATE_SHOULD_SPAWN_RECYCLER, 1);
             }
             else
             {
-                worldInstance.GetWorldStates().RemoveState("shouldSpawnRecycler");
+                worldInstance.GetWorldStates().RemoveState(Constants.STATE_SHOULD_SPAWN_RECYCLER);
             }
 
             Helper.ReconciliateTanks(tankList);
 
-            //Logger.PrintReconciledTankList();
-
-            // Write an action using Console.WriteLine()
-            // To debug: Console.Error.WriteLine("Debug messages...");
-
-            //Logger.LogWorldStates();
-
-            //Logger.PrintQueue("enemyTankTiles");
-
-            var tankSpawner = Helper.InitTankSpawner(worldInstance.GetWorldStates().GetState("matter") / 20);
+            var tankSpawner = Helper.InitTankSpawner(worldInstance.GetWorldStates().GetState(Constants.STATE_MATTER) / 20);
             var recyclerSpawner = Helper.InitRecyclerSpawner();
             recyclerSpawner.Execute();
             tankSpawner.Execute();
 
-            foreach (Tank tank in worldInstance.GetList("tanks").list)
+            foreach (Tank tank in worldInstance.GetList(Constants.RES_TANKS).list)
             {
                 tank.Execute();
             }
 
-            //temp hack
-            if (init == -1)
-            {
-                Console.WriteLine("WAIT;");
-            }
-            else
-            {
-                logger.PublishOutput();
-            }
+            logger.PublishOutput();
         }
     }
 
@@ -298,7 +274,6 @@ public sealed class World
     private static ResourceList enemyTankTiles;
     private static ResourceList enemyTiles;
     private static ResourceList scrapTiles;
-    private static ResourceList tankTargets;
     private static ResourceList recyclerSpawnPoints;
     private static ResourceList tankSpawnPoints;
     private static Dictionary<string, ResourceList> resources = new Dictionary<string, ResourceList>();
@@ -311,17 +286,15 @@ public sealed class World
         enemyTankTiles = new ResourceList();
         enemyTiles = new ResourceList();
         scrapTiles = new ResourceList();
-        tankTargets = new ResourceList();
         recyclerSpawnPoints = new ResourceList();
         tankSpawnPoints = new ResourceList();
-        resources.Add("recyclers", recyclers);
-        resources.Add("tanks", tanks);
-        resources.Add("enemyTankTiles", enemyTankTiles);
-        resources.Add("enemyTiles", enemyTiles);
-        resources.Add("scrapTiles", scrapTiles);
-        resources.Add("tankTargets", tankTargets);
-        resources.Add("recyclerSpawnPoints", recyclerSpawnPoints);
-        resources.Add("tankSpawnPoints", tankSpawnPoints);
+        resources.Add(Constants.RES_RECYCLERS, recyclers);
+        resources.Add(Constants.RES_TANKS, tanks);
+        resources.Add(Constants.RES_ENEMY_TANK_TILES, enemyTankTiles);
+        resources.Add(Constants.RES_ENEMY_TILES, enemyTiles);
+        resources.Add(Constants.RES_SCRAP_TILES, scrapTiles);
+        resources.Add(Constants.RES_RECYCLER_SPAWN_POINTS, recyclerSpawnPoints);
+        resources.Add(Constants.RES_TANK_SPAWN_POINTS, tankSpawnPoints);
     }
 
     public ResourceList GetList(string type)
@@ -457,11 +430,8 @@ public class Planner
 
         foreach (Action action in usableActions)
         {
-            //Logger.LogDebugMessage("Checking action " + action.actionName);
             if (action.IsAchievableGiven(parent.state))
             {
-                //Logger.LogDebugMessage("it is achievable!");
-
                 Dictionary<string, int> currentState = new Dictionary<string, int>(parent.state);
 
                 foreach (KeyValuePair<string, int> effect in action.afterEffects.States)
@@ -603,16 +573,6 @@ public abstract class Action
 
     public bool IsAchievableGiven(Dictionary<string, int> conditions)
     {
-        //Logger.LogDebugMessage("IsAchievableGiven: " + actionName);
-        foreach (var key in conditions)
-        {
-            //Logger.LogDebugMessage("IsAchievableGiven: param key " + key);
-        }
-        foreach (var key in preConditions.States)
-        {
-            //Logger.LogDebugMessage("IsAchievableGiven: preConditions key " + key);
-        }
-
         foreach (KeyValuePair<string, int> p in preConditions.States)
         {
             if (!conditions.ContainsKey(p.Key))
@@ -645,18 +605,15 @@ public class AttackEnemy : Action
 
     public override bool PrePerform()
     {
-        target = World.Instance.GetList("enemyTankTiles").RemoveResource();
+        target = World.Instance.GetList(Constants.RES_ENEMY_TANK_TILES).RemoveResource();
         if (target == null)
         {
-            Logger.LogDebugMessage("No more enemy target available");
             return false;
         }
 
         if (power < ((EnemyTankTile)target).Strength)
         {
-            Logger.LogDebugMessage("Enemy too strong! My power: " + power + ", Enemy power: " + ((EnemyTankTile)target).Strength + " at " + target.Tile);
-
-            World.Instance.GetList("enemyTankTiles").AddResource(target);
+            World.Instance.GetList(Constants.RES_ENEMY_TANK_TILES).AddResource(target);
             target = null;
             return false;
         }
@@ -666,7 +623,7 @@ public class AttackEnemy : Action
 
     public override bool PostPerform()
     {
-        World.Instance.GetWorldStates().ModifyState("EnemyTankTiles", -1);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_ENEMY_TANK_TILES, -1);
         return true;
     }
 
@@ -697,7 +654,7 @@ public class MoveToEnemyTile : Action
 
     public override bool PrePerform()
     {
-        target = World.Instance.GetList("enemyTiles").RemoveResource();
+        target = World.Instance.GetList(Constants.RES_ENEMY_TILES).RemoveResource();
         if (target == null)
         {
             return false;
@@ -707,7 +664,7 @@ public class MoveToEnemyTile : Action
 
     public override bool PostPerform()
     {
-        World.Instance.GetWorldStates().ModifyState("EnemyTiles", -1);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_ENEMY_TILES, -1);
         return true;
     }
 
@@ -738,7 +695,7 @@ public class MoveToScrapTile : Action
 
     public override bool PrePerform()
     {
-        target = World.Instance.GetList("scrapTiles").RemoveResource();
+        target = World.Instance.GetList(Constants.RES_SCRAP_TILES).RemoveResource();
         if (target == null)
         {
             return false;
@@ -748,7 +705,7 @@ public class MoveToScrapTile : Action
 
     public override bool PostPerform()
     {
-        World.Instance.GetWorldStates().ModifyState("ScrapTiles", -1);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_SCRAP_TILES, -1);
         return true;
     }
 
@@ -779,10 +736,10 @@ public class SpawnRecycler : Action
 
     public override bool PrePerform()
     {
-        var matter = World.Instance.GetWorldStates().GetState("matter");
+        var matter = World.Instance.GetWorldStates().GetState(Constants.STATE_MATTER);
         if (matter >= 10)
         {
-            target = World.Instance.GetList("recyclerSpawnPoints").RemoveResource();
+            target = World.Instance.GetList(Constants.RES_RECYCLER_SPAWN_POINTS).RemoveResource();
             if (target == null)
             {
                 return false;
@@ -794,8 +751,8 @@ public class SpawnRecycler : Action
 
     public override bool PostPerform()
     {
-        World.Instance.GetWorldStates().ModifyState("matter", -10);
-        World.Instance.GetWorldStates().ModifyState("RecyclerSpawnPoints", -1);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_MATTER, -10);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_RECYCLER_SPAWN_POINTS, -1);
         return true;
     }
 
@@ -828,10 +785,10 @@ public class SpawnTank : Action
 
     public override bool PrePerform()
     {
-        var matter = World.Instance.GetWorldStates().GetState("matter");
+        var matter = World.Instance.GetWorldStates().GetState(Constants.STATE_MATTER);
         if (matter >= 10*qty)
         {
-            target = World.Instance.GetList("tankSpawnPoints").RemoveResource();
+            target = World.Instance.GetList(Constants.RES_TANK_SPAWN_POINTS).RemoveResource();
             if (target == null)
             {
                 return false;
@@ -843,8 +800,8 @@ public class SpawnTank : Action
 
     public override bool PostPerform()
     {
-        World.Instance.GetWorldStates().ModifyState("matter", -10*qty);
-        World.Instance.GetWorldStates().ModifyState("TankSpawnPoints", -1);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_MATTER, -10*qty);
+        World.Instance.GetWorldStates().ModifyState(Constants.STATE_TANK_SPAWN_POINTS, -1);
 
         return true;
     }
@@ -917,7 +874,6 @@ public class Agent : GameObject
 
     public void Execute()
     {
-        //Logger.LogDebugMessage("Executing for " + Tag + " on tile " + Tile);
         if (planner == null || actionQueue == null)
         {
             planner = new Planner();
@@ -926,13 +882,9 @@ public class Agent : GameObject
 
             foreach (SubGoal sg in sortedGoals)
             {
-                //Logger.LogDebugMessage(Tile + "Planning for " + sg);
-
                 actionQueue = planner.Plan(actions, sg.sgoals, beliefs);
                 if (actionQueue != null)
                 {
-                    //Logger.LogDebugMessage("Queue built!");
-
                     currentGoal = sg;
                     break;
                 }
@@ -941,8 +893,6 @@ public class Agent : GameObject
 
         if (actionQueue != null && actionQueue.Count == 0)
         {
-            //Logger.LogDebugMessage("Planner is not null");
-
             if (currentGoal.remove)
             {
                 goals.Remove(currentGoal);
@@ -952,8 +902,6 @@ public class Agent : GameObject
 
         if (actionQueue != null && actionQueue.Count > 0)
         {
-            //Logger.LogDebugMessage("Planner is not null");
-
             currentAction = actionQueue.Dequeue();
 
             if (currentAction.PrePerform())
@@ -991,13 +939,11 @@ public class Agent : GameObject
                 else
                 {
                     nextTile = Helper.FindNextTileToTarget(World.Instance.Map, new Tile(Tile.X, Tile.Y), new Tile(destination.X, destination.Y));
-                    Logger.LogDebugMessage("For " + Tile + " the next tile is " + nextTile + " towards " + destination);
                 }
 
                 if (nextTile != null)
                 {
                     string cmd = currentAction.GetCommand(Tile, nextTile, ValueForCommand);
-                    Logger.LogDebugMessage("Logging Action: " + cmd);
                     Logger.Instance.LogAction(cmd);
 
                     if (Tile.X != -1)
@@ -1020,9 +966,9 @@ public class Tank : Agent
 {
     public Tank(List<Action> actions, Tile tile, int strength) : base(actions, tile)
     {
-        SubGoal s1 = new SubGoal("targetEliminated", 1, false);
-        SubGoal s2 = new SubGoal("tileConquered", 1, false);
-        SubGoal s3 = new SubGoal("tileConverted", 1, false);
+        SubGoal s1 = new SubGoal(Constants.GOAL_TARGET_ELIMINATED, 1, false);
+        SubGoal s2 = new SubGoal(Constants.GOAL_TILE_CONQUERED, 1, false);
+        SubGoal s3 = new SubGoal(Constants.GOAL_TILE_CONVERTED, 1, false);
 
         goals.Add(s1, 3);
         goals.Add(s2, 2);
@@ -1040,8 +986,8 @@ public class Spawner : Agent
 {
     public Spawner(List<Action> actions, Tile tile) : base(actions, tile)
     {
-        SubGoal s1 = new SubGoal("recyclerSpawned", 1, false);
-        SubGoal s2 = new SubGoal("tankSpawned", 1, false);
+        SubGoal s1 = new SubGoal(Constants.GOAL_RECYCLER_SPAWNED, 1, false);
+        SubGoal s2 = new SubGoal(Constants.GOAL_TANK_SPAWNED, 1, false);
 
         goals.Add(s1, 2);
         goals.Add(s2, 1);
@@ -1157,6 +1103,7 @@ public class Tile
     public int X;
     public int Y;
     public int Cost;
+    public int ExtraCost;
     public int Distance;
     public int CostDistance => Cost + Distance;
     public bool IsAccessible;
@@ -1202,9 +1149,9 @@ public static class Helper
     public static Spawner InitRecyclerSpawner()
     {
         var preConditionsSR = new WorldStates();
-        preConditionsSR.SetState("shouldSpawnRecycler", 1);
+        preConditionsSR.SetState(Constants.STATE_SHOULD_SPAWN_RECYCLER, 1);
         var afterEffectsSR = new WorldStates();
-        afterEffectsSR.SetState("recyclerSpawned", 1);
+        afterEffectsSR.SetState(Constants.GOAL_RECYCLER_SPAWNED, 1);
 
         var spawnRecyclerAction = new SpawnRecycler(null, "", preConditionsSR, afterEffectsSR, null);
 
@@ -1214,9 +1161,9 @@ public static class Helper
     public static Spawner InitTankSpawner(int qty)
     {
         var preConditionsST = new WorldStates();
-        preConditionsST.SetState("shouldSpawnTank", 1);
+        preConditionsST.SetState(Constants.STATE_SHOULD_SPAWN_TANK, 1);
         var afterEffectsST = new WorldStates();
-        afterEffectsST.SetState("tankSpawned", 1);
+        afterEffectsST.SetState(Constants.GOAL_TANK_SPAWNED, 1);
 
         var spawnTankAction = new SpawnTank(null, "", preConditionsST, afterEffectsST, null, qty);
 
@@ -1226,23 +1173,21 @@ public static class Helper
     public static Tank InitTank(int strength, Tile tile)
     {
         var preConditionsA = new WorldStates();
-        preConditionsA.SetState("EnemyTankTiles", 1);
+        preConditionsA.SetState(Constants.STATE_ENEMY_TANK_TILES, 1);
         var afterEffectsA = new WorldStates();
-        afterEffectsA.SetState("targetEliminated", 1);
+        afterEffectsA.SetState(Constants.GOAL_TARGET_ELIMINATED, 1);
 
         var attackEnemyTileAction = new AttackEnemy(null, "", preConditionsA, afterEffectsA, null, strength);
 
         var preConditionsET = new WorldStates();
-        //preConditionsET.SetState("shouldSpawnTank", 1);
         var afterEffectsET = new WorldStates();
-        afterEffectsET.SetState("tileConquered", 1);
+        afterEffectsET.SetState(Constants.GOAL_TILE_CONQUERED, 1);
 
         var moveToEnemyTileAction = new MoveToEnemyTile(null, "", preConditionsET, afterEffectsET, null);
 
         var preConditionsST = new WorldStates();
-        //preConditionsST.SetState("shouldSpawnTank", 1);
         var afterEffectsST = new WorldStates();
-        afterEffectsST.SetState("tileConverted", 1);
+        afterEffectsST.SetState(Constants.GOAL_TILE_CONVERTED, 1);
 
         var moveToScrapTileAction = new MoveToScrapTile(null, "", preConditionsST, afterEffectsST, null);
 
@@ -1251,24 +1196,22 @@ public static class Helper
 
     public static void NewTurnCleanUp(World worldInstance)
     {
-        worldInstance.ClearList("recyclerSpawnPoints");
-        worldInstance.GetWorldStates().RemoveState("RecyclerSpawnPoints");
-        worldInstance.ClearList("tankSpawnPoints");
-        worldInstance.GetWorldStates().RemoveState("TankSpawnPoints");
-        worldInstance.ClearList("enemyTiles");
-        worldInstance.GetWorldStates().RemoveState("EnemyTiles");
-        worldInstance.ClearList("enemyTankTiles");
-        worldInstance.GetWorldStates().RemoveState("EnemyTankTiles");
-        worldInstance.ClearList("recyclers");
-        worldInstance.GetWorldStates().RemoveState("Recyclers");
-        worldInstance.ClearList("scrapTiles");
-        worldInstance.GetWorldStates().RemoveState("ScrapTiles");
+        worldInstance.ClearList(Constants.RES_RECYCLER_SPAWN_POINTS);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_RECYCLER_SPAWN_POINTS);
+        worldInstance.ClearList(Constants.RES_TANK_SPAWN_POINTS);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_TANK_SPAWN_POINTS);
+        worldInstance.ClearList(Constants.RES_ENEMY_TILES);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_ENEMY_TILES);
+        worldInstance.ClearList(Constants.RES_ENEMY_TANK_TILES);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_ENEMY_TANK_TILES);
+        worldInstance.ClearList(Constants.RES_RECYCLERS);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_RECYCLERS);
+        worldInstance.ClearList(Constants.RES_SCRAP_TILES);
+        worldInstance.GetWorldStates().RemoveState(Constants.STATE_SCRAP_TILES);
     }
 
     static List<Tile> GetWalkableTiles(Tile[,] map, Tile currentTile, Tile targetTile)
     {
-        //Logger.LogDebugMessage("GetWalkableTiles : current " + currentTile);
-        //Logger.LogDebugMessage("GetWalkableTiles : target " + targetTile);
         var possibleTiles = new List<Tile>()
         {
             new Tile { X = currentTile.X, Y = currentTile.Y - 1, Parent = currentTile, Cost = currentTile.Cost + 1 },
@@ -1282,17 +1225,18 @@ public static class Helper
         var maxX = World.Instance.MapWidth - 1;
         var maxY = World.Instance.MapHeight - 1;
 
-        return possibleTiles
+        var result = possibleTiles
                 .Where(tile => tile.X >= 0 && tile.X <= maxX)
                 .Where(tile => tile.Y >= 0 && tile.Y <= maxY)
-                .Where(tile => map[tile.X,tile.Y].IsAccessible)
+                .Where(tile => map[tile.X, tile.Y].IsAccessible)
                 .ToList();
+
+        result.ForEach(tile => tile.Cost += map[tile.X, tile.Y].ExtraCost);
+        return result;
     }
 
     public static Tile FindNextTileToTarget(Tile[,] map, Tile start, Tile finish)
     {
-        //Logger.LogDebugMessage("FindNextTileToTarget : start " + start);
-        //Logger.LogDebugMessage("FindNextTileToTarget : finish " + finish);
         start.SetDistance(finish.X, finish.Y);
 
         var visitedTiles = new List<Tile>();
@@ -1305,12 +1249,10 @@ public static class Helper
 
             if (checkTile.X == finish.X && checkTile.Y == finish.Y)
             {
-                //Logger.LogDebugMessage("Path Found!");
                 var previousTile = checkTile.Parent;
                 while (previousTile.Parent != null)
                 {
                     checkTile = previousTile;
-                    //Logger.LogDebugMessage("checkTile : " + checkTile);
                     previousTile = previousTile.Parent;
                 }
                 return checkTile;
@@ -1348,18 +1290,17 @@ public static class Helper
     public static void ReconciliateTanks(List<Tile> tankList)
     {
         var tanksToRemove = new List<GameObject>();
-        foreach (var tank in World.Instance.GetList("tanks").list)
+        foreach (var tank in World.Instance.GetList(Constants.RES_TANKS).list)
         {
             if (!tankList.Contains(tank.Tile))
             {
-                Logger.LogDebugMessage(tank.Tile + " is no longer among us!");
                 tanksToRemove.Add(tank);
             }
         }
 
         foreach (var tank in tanksToRemove)
         {
-                World.Instance.GetList("tanks").RemoveResource(tank);
+                World.Instance.GetList(Constants.RES_TANKS).RemoveResource(tank);
                 World.Instance.GetWorldStates().ModifyState("Tanks", -1);
         }
     }
@@ -1441,7 +1382,7 @@ public sealed class Logger
     public static void PrintReconciledTankList()
     {
         Console.Error.WriteLine("TankList");
-        foreach (Tank tank in World.Instance.GetList("tanks").list)
+        foreach (Tank tank in World.Instance.GetList(Constants.RES_TANKS).list)
         {
             Console.Error.WriteLine(tank.ValueForCommand + " tank(s) at " + tank.Tile);
         }
@@ -1450,3 +1391,37 @@ public sealed class Logger
 }
 
 #endregion
+
+#region Constants
+
+public static class Constants
+{
+    public const string RES_RECYCLERS = "recyclers";
+    public const string RES_TANKS = "tanks";
+    public const string RES_ENEMY_TANK_TILES = "enemyTankTiles";
+    public const string RES_ENEMY_TILES = "enemyTiles";
+    public const string RES_SCRAP_TILES = "scrapTiles";
+    public const string RES_RECYCLER_SPAWN_POINTS = "recyclerSpawnPoints";
+    public const string RES_TANK_SPAWN_POINTS = "tankSpawnPoints";
+
+    public const string STATE_RECYCLERS = "Recyclers";
+    public const string STATE_TANKS = "Tanks";
+    public const string STATE_ENEMY_TANK_TILES = "EnemyTankTiles";
+    public const string STATE_ENEMY_TILES = "EnemyTiles";
+    public const string STATE_SCRAP_TILES = "ScrapTiles";
+    public const string STATE_RECYCLER_SPAWN_POINTS = "RecyclerSpawnPoints";
+    public const string STATE_TANK_SPAWN_POINTS = "TankSpawnPoints";
+    public const string STATE_MATTER = "Matter";
+    public const string STATE_SHOULD_SPAWN_TANK = "ShouldSpawnTank";
+    public const string STATE_SHOULD_SPAWN_RECYCLER = "ShouldSpawnRecycler";
+
+    public const string GOAL_RECYCLER_SPAWNED = "recyclerSpawned";
+    public const string GOAL_TANK_SPAWNED = "tankSpawned";
+    public const string GOAL_TARGET_ELIMINATED = "targetEliminated";
+    public const string GOAL_TILE_CONQUERED = "tileConquered";
+    public const string GOAL_TILE_CONVERTED = "tileConverted";
+
+}
+
+#endregion
+
