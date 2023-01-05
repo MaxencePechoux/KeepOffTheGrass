@@ -17,8 +17,8 @@ class Player
         var logger = Logger.Instance;
         string[] inputs;
         inputs = Console.ReadLine().Split(' ');
-        int width = int.Parse(inputs[0]);
-        int height = int.Parse(inputs[1]);
+        worldInstance.MapWidth = int.Parse(inputs[0]);
+        worldInstance.MapHeight = int.Parse(inputs[1]);
 
         worldInstance.GetWorldStates().SetState("shouldSpawnTank", 1);
 
@@ -28,13 +28,14 @@ class Player
         // game loop
         while (true)
         {
+            worldInstance.Map = new Tile[worldInstance.MapWidth, worldInstance.MapHeight];
             inputs = Console.ReadLine().Split(' ');
             Helper.NewTurnCleanUp(worldInstance);
             worldInstance.GetWorldStates().SetState("matter", int.Parse(inputs[0]));
             int oppMatter = int.Parse(inputs[1]);
-            for (int i = 0; i < height; i++)
+            for (int i = 0; i < worldInstance.MapHeight; i++)
             {
-                for (int j = 0; j < width; j++)
+                for (int j = 0; j < worldInstance.MapWidth; j++)
                 {
                     inputs = Console.ReadLine().Split(' ');
                     int scrapAmount = int.Parse(inputs[0]);
@@ -46,6 +47,8 @@ class Player
                     bool inRangeOfRecycler = int.Parse(inputs[6]) == 1;
 
                     var tile = new Tile(j, i);
+                    tile.IsAccessible = scrapAmount > 0 && !recycler;
+                    worldInstance.Map[j, i] = tile;
 
                     if (owner == 1)
                     {
@@ -76,7 +79,7 @@ class Player
                         //temp hack
                         if (init == 0)
                         {
-                            init = j < width / 2 ? 1 : -1;
+                            init = j < World.Instance.MapWidth / 2 ? 1 : -1;
                         }
                     }
                     else if (owner == 0 && !recycler)
@@ -304,6 +307,10 @@ public sealed class World
     {
         return worldStates;
     }
+
+    public Tile[,] Map;
+    public int MapWidth;
+    public int MapHeight;
 }
 
 #endregion
@@ -1037,8 +1044,22 @@ public class Tile
         Y = y;
     }
 
+    public Tile()
+    {
+    }
+
     public int X;
     public int Y;
+    public int Cost;
+    public int Distance;
+    public int CostDistance => Cost + Distance;
+    public bool IsAccessible;
+    public Tile Parent;
+
+    public void SetDistance(int targetX, int targetY)
+    {
+        this.Distance = Math.Abs(targetX - X) + Math.Abs(targetY - Y);
+    }
 
     public override string ToString()
     {
@@ -1120,7 +1141,75 @@ public static class Helper
         worldInstance.GetWorldStates().RemoveState("Recyclers");
         worldInstance.ClearQueue("scrapTiles");
         worldInstance.GetWorldStates().RemoveState("ScrapTiles");
+    }
 
+    static List<Tile> GetWalkableTiles(Tile[,] map, Tile currentTile, Tile targetTile)
+    {
+        var possibleTiles = new List<Tile>()
+        {
+            new Tile { X = currentTile.X, Y = currentTile.Y - 1, Parent = currentTile, Cost = currentTile.Cost + 1 },
+            new Tile { X = currentTile.X, Y = currentTile.Y + 1, Parent = currentTile, Cost = currentTile.Cost + 1 },
+            new Tile { X = currentTile.X - 1, Y = currentTile.Y, Parent = currentTile, Cost = currentTile.Cost + 1 },
+            new Tile { X = currentTile.X + 1, Y = currentTile.Y, Parent = currentTile, Cost = currentTile.Cost + 1 },
+        };
+
+        possibleTiles.ForEach(tile => tile.SetDistance(targetTile.X, targetTile.Y));
+
+        var maxX = World.Instance.MapWidth - 1;
+        var maxY = World.Instance.MapHeight - 1;
+
+        return possibleTiles
+                .Where(tile => tile.X >= 0 && tile.X <= maxX)
+                .Where(tile => tile.Y >= 0 && tile.Y <= maxY)
+                .Where(tile => map[tile.Y,tile.X].IsAccessible)
+                .ToList();
+    }
+
+    public static Tile FindNextTileToTarget(Tile[,] map, Tile start, Tile finish)
+    {
+        var visitedTiles = new List<Tile>();
+        var activeTiles = new List<Tile>();
+        activeTiles.Add(start);
+        while (activeTiles.Any())
+        {
+            var checkTile = activeTiles.OrderBy(x => x.CostDistance).First();
+
+            if (checkTile.X == finish.X && checkTile.Y == finish.Y)
+            {
+                while (checkTile.Parent != null)
+                {
+                    checkTile = checkTile.Parent;
+                }
+                return checkTile;
+            }
+
+            visitedTiles.Add(checkTile);
+            activeTiles.Remove(checkTile);
+
+            var walkableTiles = GetWalkableTiles(map, checkTile, finish);
+
+            foreach (var walkableTile in walkableTiles)
+            {
+                if (visitedTiles.Any(x => x.X == walkableTile.X && x.Y == walkableTile.Y))
+                    continue;
+
+                if (activeTiles.Any(x => x.X == walkableTile.X && x.Y == walkableTile.Y))
+                {
+                    var existingTile = activeTiles.First(x => x.X == walkableTile.X && x.Y == walkableTile.Y);
+                    if (existingTile.CostDistance > checkTile.CostDistance)
+                    {
+                        activeTiles.Remove(existingTile);
+                        activeTiles.Add(walkableTile);
+                    }
+                }
+                else
+                {
+                    activeTiles.Add(walkableTile);
+                }
+            }
+        }
+
+        return null;
     }
 }
 
